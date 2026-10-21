@@ -213,7 +213,12 @@ namespace Avalonia.Native
 
         public IWindowImpl CreateWindow()
         {
-            return new WindowImpl(_factory, _options ?? new AvaloniaNativePlatformOptions());
+            return new WindowImpl(_factory, _options ?? new AvaloniaNativePlatformOptions(), null);
+        }
+
+        internal IWindowImpl CreatePanel(AvaloniaNativePanelOptions options)
+        {
+            return new WindowImpl(_factory, _options ?? new AvaloniaNativePlatformOptions(), options);
         }
 
         public IWindowImpl CreateEmbeddableWindow()

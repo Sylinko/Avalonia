@@ -29,7 +29,7 @@ public:
 
     virtual ~WindowBaseImpl();
 
-    WindowBaseImpl(IAvnWindowBaseEvents *events, bool usePanel = false);
+    WindowBaseImpl(IAvnWindowBaseEvents *events, bool usePanel = false, bool isNonActivating = false);
 
     virtual HRESULT ObtainNSWindowHandle(void **ret) override;
 
@@ -84,6 +84,7 @@ public:
     void UpdateWindowLevel();
 
 protected:
+    bool IsNonActivating();
     virtual NSWindowLevel GetBaseWindowLevel();
 
     virtual NSWindowStyleMask CalculateStyleMask() = 0;
@@ -91,7 +92,7 @@ protected:
     virtual void SetClientSize(NSSize size) override;
 
 private:
-    void CreateNSWindow (bool isDialog);
+    void CreateNSWindow (bool usePanel, bool isNonActivating);
     void CleanNSWindow ();
 
     bool hasPosition;

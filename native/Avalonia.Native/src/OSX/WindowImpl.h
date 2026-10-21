@@ -22,7 +22,7 @@ BEGIN_INTERFACE_MAP()
 
     ComPtr<IAvnWindowEvents> WindowEvents;
 
-    WindowImpl(IAvnWindowEvents* events);
+    WindowImpl(IAvnWindowEvents* events, bool usePanel, bool isNonActivating);
 
     virtual HRESULT Show (bool activate, bool isDialog) override;
 

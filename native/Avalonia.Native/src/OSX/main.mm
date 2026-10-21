@@ -201,12 +201,17 @@ public:
 
 static ComPtr<IAvnGCHandleDeallocatorCallback> _deallocator;
 static ComPtr<IAvnDispatcher> _dispatcher;
-class AvaloniaNative : public ComSingleObject<IAvaloniaNativeFactory, &IID_IAvaloniaNativeFactory>
+class AvaloniaNative : public ComObject, public virtual IAvaloniaNativeFactory, public virtual IAvnPanelFactory
 {
     
 public:
     FORWARD_IUNKNOWN()
     
+    BEGIN_INTERFACE_MAP()
+        INTERFACE_MAP_ENTRY(IAvaloniaNativeFactory, IID_IAvaloniaNativeFactory)
+        INTERFACE_MAP_ENTRY(IAvnPanelFactory, IID_IAvnPanelFactory)
+    END_INTERFACE_MAP()
+
     virtual ~AvaloniaNative() override
     {
         ReleaseAvnAppEvents();
@@ -260,6 +265,32 @@ public:
         }
     };
     
+    virtual HRESULT CreatePanel(IAvnWindowEvents* cb, bool isNonActivating, IAvnWindow** ppv) override
+    {
+        START_COM_CALL;
+
+        @autoreleasepool
+        {
+            if (cb == nullptr || ppv == nullptr)
+                return E_POINTER;
+            *ppv = CreateAvnPanel(cb, isNonActivating);
+            return S_OK;
+        }
+    }
+
+    virtual HRESULT CreateNonActivatingPopup(IAvnWindowEvents* cb, IAvnPopup** ppv) override
+    {
+        START_COM_CALL;
+
+        @autoreleasepool
+        {
+            if (cb == nullptr || ppv == nullptr)
+                return E_POINTER;
+            *ppv = CreateAvnNonActivatingPopup(cb);
+            return S_OK;
+        }
+    }
+
     virtual HRESULT CreatePopup(IAvnWindowEvents* cb, IAvnPopup** ppv) override
     {
         START_COM_CALL;

@@ -15,6 +15,7 @@ namespace Avalonia.Native
     internal class WindowImpl : WindowBaseImpl, IWindowImpl
     {
         private readonly AvaloniaNativePlatformOptions _opts;
+        private readonly bool _isNonActivating;
         private readonly IAvnWindow _native;
         private double _extendTitleBarHeight = -1;
         private DoubleClickHelper _doubleClickHelper;
@@ -23,14 +24,24 @@ namespace Avalonia.Native
         private bool _canMaximize = true;
         private Controls.WindowDecorations _decorations = Controls.WindowDecorations.Full;
 
-        internal WindowImpl(IAvaloniaNativeFactory factory, AvaloniaNativePlatformOptions opts) : base(factory)
+        internal WindowImpl(IAvaloniaNativeFactory factory, AvaloniaNativePlatformOptions opts, AvaloniaNativePanelOptions? panelOptions) : base(factory)
         {
             _opts = opts;
+            _isNonActivating = panelOptions?.IsNonActivating == true;
             _doubleClickHelper = new DoubleClickHelper();
             
             using (var e = new WindowEvents(this))
             {
-                Init(new MacOSTopLevelHandle(_native = factory.CreateWindow(e)));
+                if (panelOptions is null)
+                {
+                    _native = factory.CreateWindow(e);
+                }
+                else
+                {
+                    using var panelFactory = MicroComRuntime.QueryInterface<IAvnPanelFactory>(factory);
+                    _native = panelFactory.CreatePanel(e, panelOptions.IsNonActivating.AsComBool());
+                }
+                Init(new MacOSTopLevelHandle(_native));
             }
 
             _nativeMenuExporter = new AvaloniaNativeMenuExporter(_native, factory);
@@ -237,7 +248,7 @@ namespace Avalonia.Native
         public void Move(PixelPoint point) => Position = point;
 
         public override IPopupImpl? CreatePopup() =>
-            _opts.OverlayPopups ? null : new PopupImpl(Factory, this);
+            _opts.OverlayPopups ? null : new PopupImpl(Factory, this, _isNonActivating);
 
         public Action? GotInputWhenDisabled { get; set; }
 

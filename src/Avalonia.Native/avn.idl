@@ -725,6 +725,14 @@ interface IAvaloniaNativeFactory : IUnknown
      HRESULT SetDockMenu(IAvnMenu* menu);
 }
 
+// Optional factory extension. Keep IAvaloniaNativeFactory's original ABI unchanged.
+[uuid(341a6699-58bf-4357-a755-6423fd57499f)]
+interface IAvnPanelFactory : IUnknown
+{
+     HRESULT CreatePanel(IAvnWindowEvents* cb, bool isNonActivating, IAvnWindow** ppv);
+     HRESULT CreateNonActivatingPopup(IAvnWindowEvents* cb, IAvnPopup** ppv);
+}
+
 [uuid(233e094f-9b9f-44a3-9a6e-6948bbdd9fb1)]
 interface IAvnString : IUnknown
 {

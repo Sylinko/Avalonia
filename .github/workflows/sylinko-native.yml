@@ -1,0 +1,64 @@
+name: Build Sylinko Avalonia.Native
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the reviewed 12.1.3 package and open its feed PR
+        type: boolean
+        default: false
+      deployment_target:
+        description: Native deployment target (release baseline is 10.13)
+        type: string
+        default: '10.13'
+
+concurrency:
+  group: sylinko-native-12.1.3
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.repository == 'Sylinko/Avalonia'
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Check publication identity
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_TARGET: ${{ inputs.deployment_target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$DEPLOYMENT_TARGET" = 10.13
+          if gh release view nuget/Avalonia.Native/12.1.3 >/dev/null 2>&1; then
+            echo 'This release already exists. Do not replace published package bytes.' >&2
+            exit 1
+          fi
+      - name: Build the compatibility package
+        env:
+          DEPLOYMENT_TARGET: ${{ inputs.deployment_target }}
+        shell: bash
+        run: scripts/sylinko/build-native-package.sh --deployment-target "$DEPLOYMENT_TARGET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Avalonia.Native-12.1.3
+          path: artifacts/sylinko-native/*
+      - name: Publish reviewed package and propose feed version
+        if: inputs.publish
+        uses: Sylinko/nuget-feed@v1
+        with:
+          token: ${{ secrets.SYLINKO_NUGET_FEED_TOKEN }}
+          release-tag: nuget/Avalonia.Native/12.1.3
+          artifacts-directory: artifacts/sylinko-native

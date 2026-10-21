@@ -311,7 +311,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
 
     public virtual IPopupImpl? CreatePopup()
     {
-        return new PopupImpl(Factory, this);
+        return new PopupImpl(Factory, this, false);
     }
 
     public void SetTransparencyLevelHint(IReadOnlyList<WindowTransparencyLevel> transparencyLevels)

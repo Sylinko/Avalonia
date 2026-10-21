@@ -2,6 +2,7 @@
 using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Native.Interop;
 using Avalonia.Platform;
+using MicroCom.Runtime;
 
 namespace Avalonia.Native
 {
@@ -9,15 +10,26 @@ namespace Avalonia.Native
     {
         private readonly ITopLevelImpl _parent;
         private readonly IAvnPopup _native;
+        private readonly bool _isNonActivating;
 
         public PopupImpl(IAvaloniaNativeFactory factory,
-            ITopLevelImpl parent) : base(factory)
+            ITopLevelImpl parent, bool isNonActivating) : base(factory)
         {
             _parent = parent;
+            _isNonActivating = isNonActivating;
             
             using (var e = new PopupEvents(this))
             {
-                Init(new MacOSTopLevelHandle(_native = factory.CreatePopup(e)));
+                if (isNonActivating)
+                {
+                    using var panelFactory = MicroComRuntime.QueryInterface<IAvnPanelFactory>(factory);
+                    _native = panelFactory.CreateNonActivatingPopup(e);
+                }
+                else
+                {
+                    _native = factory.CreatePopup(e);
+                }
+                Init(new MacOSTopLevelHandle(_native));
             }
             
             PopupPositioner = new ManagedPopupPositioner(new ManagedPopupPositionerPopupImplHelper(parent, MoveResize));
@@ -82,7 +94,7 @@ namespace Avalonia.Native
             }
         }
 
-        public override IPopupImpl CreatePopup() => new PopupImpl(Factory, this);
+        public override IPopupImpl CreatePopup() => new PopupImpl(Factory, this, _isNonActivating);
 
         public void SetWindowManagerAddShadowHint(bool enabled)
         {

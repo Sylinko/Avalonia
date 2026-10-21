@@ -45,7 +45,7 @@ WindowBaseImpl::~WindowBaseImpl() {
     Window = nullptr;
 }
 
-WindowBaseImpl::WindowBaseImpl(IAvnWindowBaseEvents *events, bool usePanel) : TopLevelImpl(events) {
+WindowBaseImpl::WindowBaseImpl(IAvnWindowBaseEvents *events, bool usePanel, bool isNonActivating) : TopLevelImpl(events) {
     _children = std::list<ComObjectWeakPtr<WindowBaseImpl>>();
     _shown = false;
     _inResize = false;
@@ -58,7 +58,7 @@ WindowBaseImpl::WindowBaseImpl(IAvnWindowBaseEvents *events, bool usePanel) : To
     lastMinSize = NSSize { 0, 0 };
     lastMenu = nullptr;
 
-    CreateNSWindow(usePanel);
+    CreateNSWindow(usePanel, isNonActivating);
 
     StandardContainer = [[AutoFitContentView new] initWithContent:View];
 
@@ -118,7 +118,8 @@ HRESULT WindowBaseImpl::Show(bool activate, bool isDialog) {
             [Window orderFront:Window];
             [Window makeKeyAndOrderFront:Window];
             [Window makeFirstResponder:View];
-            ActivateApplication();
+            if (!IsNonActivating())
+                ActivateApplication();
         } else {
             [Window orderFront:Window];
         }
@@ -196,7 +197,8 @@ HRESULT WindowBaseImpl::Activate() {
     @autoreleasepool {
         if (Window != nullptr) {
             [Window makeKeyAndOrderFront:nil];
-            ActivateApplication();
+            if (!IsNonActivating())
+                ActivateApplication();
         }
     }
 
@@ -479,7 +481,12 @@ void WindowBaseImpl::CleanNSWindow() {
     }
 }
 
-void WindowBaseImpl::CreateNSWindow(bool usePanel) {
+bool WindowBaseImpl::IsNonActivating() {
+    return [Window isKindOfClass:[NSPanel class]] &&
+        ([Window styleMask] & NSWindowStyleMaskNonactivatingPanel) != 0;
+}
+
+void WindowBaseImpl::CreateNSWindow(bool usePanel, bool isNonActivating) {
     // Anchor the content rect to the primary screen's origin. It's usually at (0,0), but can be offset while the
     // display server is mid-reconfiguration. This ensures the window is always on a proper screen.
     // See https://github.com/AvaloniaUI/Avalonia/issues/18895
@@ -491,8 +498,14 @@ void WindowBaseImpl::CreateNSWindow(bool usePanel) {
     NSRect contentRect = NSRect { origin.x, origin.y, lastSize };
 
     if (usePanel) {
-        Window = [[AvnPanel alloc] initWithParent:this contentRect:contentRect styleMask:NSWindowStyleMaskBorderless];
+        // Non-activation must be established during initialization, before AppKit creates
+        // the window's focus route. Keep the same native object throughout its lifetime.
+        NSWindowStyleMask styleMask = NSWindowStyleMaskBorderless;
+        if (isNonActivating)
+            styleMask |= NSWindowStyleMaskNonactivatingPanel;
+        Window = [[AvnPanel alloc] initWithParent:this contentRect:contentRect styleMask:styleMask];
         [Window setHidesOnDeactivate:false];
+        [(NSPanel*)Window setBecomesKeyOnlyIfNeeded:isNonActivating];
     } else {
         Window = [[AvnWindow alloc] initWithParent:this contentRect:contentRect styleMask:NSWindowStyleMaskBorderless];
     }
