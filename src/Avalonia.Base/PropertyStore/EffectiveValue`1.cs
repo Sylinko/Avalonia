@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 using Avalonia.Data;
 
 namespace Avalonia.PropertyStore
@@ -15,9 +17,9 @@ namespace Avalonia.PropertyStore
     /// </remarks>
     internal sealed class EffectiveValue<T> : EffectiveValue
     {
-        private readonly StyledPropertyMetadata<T> _metadata;
+        private StyledPropertyMetadata<T> _metadata;
         private T? _baseValue;
-        private readonly UncommonFields? _uncommon;
+        private UncommonFields? _uncommon;
 
         public EffectiveValue(
             AvaloniaObject owner,
@@ -201,6 +203,55 @@ namespace Avalonia.PropertyStore
         }
 
         protected override object? GetBoxedValue() => Value;
+
+        internal override bool SweepMetadataAndValueReferences(
+            AvaloniaObject owner,
+            IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (_metadata.ReferencesContexts(retiringContexts) &&
+                !AvaloniaBaseCollectibleSweeper.PropertyReferences(Property, retiringContexts))
+            {
+                _metadata = (StyledPropertyMetadata<T>)Property.GetMetadataSkippingContexts(owner.GetType(), retiringContexts);
+
+                if (_metadata.CoerceValue is { } replacementCoerce)
+                {
+                    _uncommon ??= new UncommonFields();
+                    _uncommon._coerce = replacementCoerce;
+                    HasCoercion = true;
+                }
+                else if (_uncommon is not null &&
+                    CollectibleAssemblyCleanup.References(_uncommon._coerce, retiringContexts))
+                {
+                    _uncommon._coerce = null;
+                    HasCoercion = false;
+                    IsCoercedDefaultValue = false;
+
+                    if (_uncommon._uncoercedValue is null && _uncommon._uncoercedBaseValue is null)
+                    {
+                        _uncommon = null;
+                    }
+                }
+            }
+
+            if (_metadata.ReferencesContexts(retiringContexts) ||
+                CollectibleAssemblyCleanup.ReferencesObject(Value, retiringContexts) ||
+                CollectibleAssemblyCleanup.ReferencesObject(_baseValue, retiringContexts) ||
+                (ValueEntry is not null && CollectibleAssemblyCleanup.ReferencesObject(ValueEntry, retiringContexts)) ||
+                (BaseValueEntry is not null && CollectibleAssemblyCleanup.ReferencesObject(BaseValueEntry, retiringContexts)))
+            {
+                return true;
+            }
+
+            if (_uncommon is not null &&
+                (CollectibleAssemblyCleanup.References(_uncommon._coerce, retiringContexts) ||
+                 CollectibleAssemblyCleanup.ReferencesObject(_uncommon._uncoercedValue, retiringContexts) ||
+                 CollectibleAssemblyCleanup.ReferencesObject(_uncommon._uncoercedBaseValue, retiringContexts)))
+            {
+                return true;
+            }
+
+            return CanRemove();
+        }
 
         private T GetValue(IValueEntry entry)
             => IValueEntry.TryGetValue<T>(entry, out var value) ? value : _metadata.DefaultValue;

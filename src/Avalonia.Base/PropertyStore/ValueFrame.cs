@@ -1,8 +1,11 @@
 ﻿using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 using Avalonia.Data;
 using Avalonia.Data.Core;
+using Avalonia.Styling;
 using Avalonia.Utilities;
 
 namespace Avalonia.PropertyStore
@@ -111,6 +114,32 @@ namespace Avalonia.PropertyStore
             }
 
             _index.Remove(property);
+        }
+
+        internal void SweepFrameCollectible(
+            ValueStore owner,
+            IReadOnlySet<AssemblyLoadContext> retiringContexts,
+            out bool isEmpty)
+        {
+            for (var i = EntryCount - 1; i >= 0; i--)
+            {
+                var entry = GetEntry(i);
+                if (!AvaloniaBaseCollectibleSweeper.PropertyReferences(entry.Property, retiringContexts) &&
+                    !CollectibleAssemblyCleanup.ReferencesObject(entry, retiringContexts) &&
+                    !(entry is Setter setter && CollectibleAssemblyCleanup.ReferencesObject(setter.Value, retiringContexts)))
+                {
+                    continue;
+                }
+
+                entry.Unsubscribe();
+                Remove(entry.Property);
+                if (!_isShared)
+                {
+                    owner.OnValueEntryRemoved(this, entry.Property);
+                }
+            }
+
+            isEmpty = !_isShared && EntryCount == 0;
         }
     }
 }

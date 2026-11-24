@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Data;
 
 namespace Avalonia
@@ -87,5 +89,10 @@ namespace Avalonia
         /// For example, delegates which receive the owner object should be removed.
         /// </remarks>
         public abstract AvaloniaPropertyMetadata GenerateTypeSafeMetadata();
+
+        internal virtual bool ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return CollectibleAssemblyCleanup.References(GetType(), retiringContexts);
+        }
     }
 }

@@ -2,7 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Runtime.Loader;
 using Avalonia.Collections;
+using Avalonia.Collectible;
 using Avalonia.Controls;
 using Avalonia.PropertyStore;
 
@@ -316,6 +318,58 @@ namespace Avalonia.Styling
                 throw new InvalidOperationException(
                     $"{nameof(ControlTheme)} (for {theme.TargetType}) cannot be added to a {nameof(Styles)} collection.");
             }
+        }
+
+        internal void SweepStylesCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts, ISet<object> visited)
+        {
+            for (var i = _styles.Count - 1; i >= 0; i--)
+            {
+                var style = _styles[i];
+                if (IsRetiringStyle(style, retiringContexts))
+                {
+                    _styles.RemoveAt(i);
+                }
+                else
+                {
+                    AvaloniaBaseCollectibleSweeper.ScrubObject(style, retiringContexts, visited);
+                }
+            }
+
+            if (_resources is not null)
+            {
+                if (CollectibleAssemblyCleanup.ReferencesObject(_resources, retiringContexts))
+                {
+                    _resources = null;
+                }
+                else
+                {
+                    AvaloniaBaseCollectibleSweeper.ScrubObject(_resources, retiringContexts, visited);
+                }
+            }
+        }
+
+        internal static bool IsRetiringStyle(IStyle style, IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (CollectibleAssemblyCleanup.ReferencesObject(style, retiringContexts))
+            {
+                return true;
+            }
+
+            if (style is Style concreteStyle &&
+                concreteStyle.Selector is not null &&
+                (CollectibleAssemblyCleanup.ReferencesObject(concreteStyle.Selector, retiringContexts) ||
+                    CollectibleAssemblyCleanup.References(concreteStyle.Selector.TargetType, retiringContexts)))
+            {
+                return true;
+            }
+
+            if (style is ControlTheme theme &&
+                CollectibleAssemblyCleanup.References(theme.TargetType, retiringContexts))
+            {
+                return true;
+            }
+
+            return false;
         }
     }
 }

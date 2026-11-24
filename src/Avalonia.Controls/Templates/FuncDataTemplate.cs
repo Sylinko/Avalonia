@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Reactive;
 using Avalonia.Controls.Primitives;
 
@@ -57,6 +59,7 @@ namespace Avalonia.Controls.Templates
         /// The implementation of the <see cref="Match"/> method.
         /// </summary>
         private readonly Func<object?, bool> _match;
+        private readonly Type? _dataType;
         private readonly bool _supportsRecycling;
 
         /// <summary>
@@ -73,6 +76,7 @@ namespace Avalonia.Controls.Templates
             bool supportsRecycling = false)
             : this(o => IsInstance(o, type), build, supportsRecycling)
         {
+            _dataType = type;
         }
 
         /// <summary>
@@ -93,6 +97,13 @@ namespace Avalonia.Controls.Templates
         {
             _match = match ?? throw new ArgumentNullException(nameof(match));
             _supportsRecycling = supportsRecycling;
+        }
+
+        private protected override bool ReferencesContextsCore(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return base.ReferencesContextsCore(retiringContexts) ||
+                CollectibleAssemblyCleanup.References(_dataType, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(_match, retiringContexts);
         }
 
         /// <summary>

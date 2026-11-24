@@ -4,6 +4,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 
 namespace Avalonia.Utilities
 {
@@ -69,8 +71,108 @@ namespace Avalonia.Utilities
         }
 
         private static readonly Dictionary<Type, Dictionary<string, EventInfo>> s_accessors = new();
+        private static readonly object s_trackingLock = new();
+        private static readonly List<WeakReference<ICollectibleSubscriptionTarget>> s_trackedSubscriptions = new();
 
-        private class Subscription<T, TSubscriber> where T : EventArgs where TSubscriber : class
+        private static void TrackSubscription(ICollectibleSubscriptionTarget subscription)
+        {
+            lock (s_trackingLock)
+            {
+                s_trackedSubscriptions.Add(new WeakReference<ICollectibleSubscriptionTarget>(subscription));
+            }
+        }
+
+        internal static void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (retiringContexts.Count == 0)
+            {
+                return;
+            }
+
+            List<ICollectibleSubscriptionTarget>? liveSubscriptions = null;
+            lock (s_trackingLock)
+            {
+                for (var i = s_trackedSubscriptions.Count - 1; i >= 0; i--)
+                {
+                    if (s_trackedSubscriptions[i].TryGetTarget(out var subscription))
+                    {
+                        liveSubscriptions ??= new List<ICollectibleSubscriptionTarget>();
+                        liveSubscriptions.Add(subscription);
+                    }
+                    else
+                    {
+                        s_trackedSubscriptions.RemoveAt(i);
+                    }
+                }
+            }
+
+            if (liveSubscriptions is not null)
+            {
+                foreach (var subscription in liveSubscriptions)
+                {
+                    subscription.SweepSubscriptionCollectible(retiringContexts);
+                }
+            }
+
+            SweepAccessorsOnly(retiringContexts);
+        }
+
+        internal static void SweepAccessorsOnly(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (retiringContexts.Count == 0)
+            {
+                return;
+            }
+
+            lock (s_accessors)
+            {
+                List<Type>? typesToRemove = null;
+                foreach (var pair in s_accessors)
+                {
+                    if (CollectibleAssemblyCleanup.References(pair.Key, retiringContexts))
+                    {
+                        typesToRemove ??= new List<Type>();
+                        typesToRemove.Add(pair.Key);
+                        continue;
+                    }
+
+                    List<string>? eventsToRemove = null;
+                    foreach (var eventPair in pair.Value)
+                    {
+                        if (CollectibleAssemblyCleanup.References(eventPair.Value, retiringContexts))
+                        {
+                            eventsToRemove ??= new List<string>();
+                            eventsToRemove.Add(eventPair.Key);
+                        }
+                    }
+
+                    if (eventsToRemove is not null)
+                    {
+                        foreach (var eventName in eventsToRemove)
+                        {
+                            pair.Value.Remove(eventName);
+                        }
+                    }
+
+                    if (pair.Value.Count == 0)
+                    {
+                        typesToRemove ??= new List<Type>();
+                        typesToRemove.Add(pair.Key);
+                    }
+                }
+
+                if (typesToRemove is not null)
+                {
+                    foreach (var type in typesToRemove)
+                    {
+                        s_accessors.Remove(type);
+                    }
+                }
+            }
+        }
+
+        private class Subscription<T, TSubscriber> : ICollectibleSubscriptionTarget
+            where T : EventArgs where TSubscriber : class
         {
             private readonly EventInfo _info;
             private readonly SubscriptionDic<T, TSubscriber> _sdic;
@@ -80,6 +182,7 @@ namespace Avalonia.Utilities
 
             private Descriptor[] _data = new Descriptor[2];
             private int _count;
+            private bool _isTracked;
 
             private delegate void CallerDelegate(TSubscriber s, object? sender, T args);
 
@@ -127,6 +230,10 @@ namespace Avalonia.Utilities
             {
                 _info.RemoveMethod!.Invoke(_target, new object?[] { _delegate });
                 _sdic.Remove(_eventName);
+                if (_sdic.Count == 0)
+                {
+                    SubscriptionTypeStorage<T, TSubscriber>.Subscribers.Remove(_target);
+                }
             }
 
             public void Add(EventHandler<T> s)
@@ -152,6 +259,12 @@ namespace Avalonia.Utilities
                     Subscriber = new WeakReference<TSubscriber>(subscriber)
                 };
                 _count++;
+
+                if (!_isTracked)
+                {
+                    _isTracked = true;
+                    TrackSubscription(this);
+                }
             }
 
             public void Remove(EventHandler<T> s)
@@ -177,6 +290,7 @@ namespace Avalonia.Utilities
 
             private void Compact(bool preventDestroy = false)
             {
+                var previousCount = _count;
                 int empty = -1;
                 for (int c = 0; c < _count; c++)
                 {
@@ -199,8 +313,70 @@ namespace Avalonia.Utilities
                 }
                 if (empty != -1)
                     _count = empty;
+                if (_count < previousCount)
+                    Array.Clear(_data, _count, previousCount - _count);
                 if (_count == 0 && !preventDestroy)
                     Destroy();
+            }
+
+            public void SweepSubscriptionCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+            {
+                if (typeof(TSubscriber).IsCollectible && CollectibleAssemblyCleanup.References(typeof(TSubscriber), retiringContexts))
+                {
+                    s_callers.Clear();
+                }
+                else if (!typeof(TSubscriber).IsCollectible)
+                {
+                    List<MethodInfo>? methodsToRemove = null;
+                    foreach (var callerPair in s_callers)
+                    {
+                        if (CollectibleAssemblyCleanup.References(callerPair.Key, retiringContexts))
+                        {
+                            methodsToRemove ??= new List<MethodInfo>();
+                            methodsToRemove.Add(callerPair.Key);
+                        }
+                    }
+
+                    if (methodsToRemove is not null)
+                    {
+                        foreach (var method in methodsToRemove)
+                        {
+                            s_callers.Remove(method);
+                        }
+                    }
+                }
+
+                if ((typeof(TSubscriber).IsCollectible && CollectibleAssemblyCleanup.References(typeof(TSubscriber), retiringContexts)) ||
+                    (typeof(T).IsCollectible && CollectibleAssemblyCleanup.References(typeof(T), retiringContexts)) ||
+                    CollectibleAssemblyCleanup.ReferencesObject(_target, retiringContexts) ||
+                    CollectibleAssemblyCleanup.References(_info, retiringContexts))
+                {
+                    Array.Clear(_data, 0, _data.Length);
+                    _count = 0;
+                    Destroy();
+                    return;
+                }
+
+                var hasRemoved = false;
+                for (var i = 0; i < _count; i++)
+                {
+                    var descriptor = _data[i];
+                    var shouldRemove = descriptor.Subscriber is null ||
+                        !descriptor.Subscriber.TryGetTarget(out var subscriber) ||
+                        CollectibleAssemblyCleanup.ReferencesObject(subscriber, retiringContexts) ||
+                        CollectibleAssemblyCleanup.References(descriptor.Caller, retiringContexts);
+
+                    if (shouldRemove)
+                    {
+                        _data[i] = default;
+                        hasRemoved = true;
+                    }
+                }
+
+                if (hasRemoved)
+                {
+                    Compact();
+                }
             }
 
             private void OnEvent(object? sender, T eventArgs)

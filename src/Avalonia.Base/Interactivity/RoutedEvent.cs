@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 using Avalonia.Reactive;
 
 namespace Avalonia.Interactivity
@@ -81,7 +84,7 @@ namespace Avalonia.Interactivity
             RoutingStrategies routes = RoutingStrategies.Direct | RoutingStrategies.Bubble,
             bool handledEventsToo = false)
         {
-            return Raised.Subscribe(args =>
+            var subscription = Raised.Subscribe(args =>
             {
                 (object sender, RoutedEventArgs e) = args;
 
@@ -92,6 +95,17 @@ namespace Avalonia.Interactivity
                     handler(sender, e);
                 }
             });
+
+            if (CollectibleAssemblyCleanup.IsCollectible(targetType) ||
+                CollectibleAssemblyCleanup.IsCollectible(handler))
+            {
+                var owners = new HashSet<AssemblyLoadContext>();
+                CollectibleAssemblyCleanup.CollectContexts(targetType, owners);
+                CollectibleAssemblyCleanup.CollectContexts(handler, owners);
+                CollectibleAssemblyCleanup.RegisterCleanup(owners, subscription);
+            }
+
+            return subscription;
         }
 
         internal void InvokeRaised(object sender, RoutedEventArgs e)
@@ -102,6 +116,19 @@ namespace Avalonia.Interactivity
         internal void InvokeRouteFinished(RoutedEventArgs e)
         {
             _routeFinished.OnNext(e);
+        }
+
+        internal bool ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return CollectibleAssemblyCleanup.References(GetType(), retiringContexts) ||
+                CollectibleAssemblyCleanup.References(OwnerType, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(EventArgsType, retiringContexts);
+        }
+
+        internal void SweepCollectibleObservers(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            _raised.SweepCollectibleObservers(retiringContexts);
+            _routeFinished.SweepCollectibleObservers(retiringContexts);
         }
 
         public override string ToString()
@@ -131,7 +158,19 @@ namespace Avalonia.Interactivity
                 }
             }
 
-            return AddClassHandler(typeof(TTarget), Adapter, routes, handledEventsToo);
+            var subscription = AddClassHandler(typeof(TTarget), Adapter, routes, handledEventsToo);
+            if (typeof(TTarget).IsCollectible ||
+                typeof(TEventArgs).IsCollectible ||
+                CollectibleAssemblyCleanup.IsCollectible(handler))
+            {
+                var owners = new HashSet<AssemblyLoadContext>();
+                CollectibleAssemblyCleanup.CollectContexts(typeof(TTarget), owners);
+                CollectibleAssemblyCleanup.CollectContexts(typeof(TEventArgs), owners);
+                CollectibleAssemblyCleanup.CollectContexts(handler, owners);
+                CollectibleAssemblyCleanup.RegisterCleanup(owners, subscription);
+            }
+
+            return subscription;
         }
     }
 }

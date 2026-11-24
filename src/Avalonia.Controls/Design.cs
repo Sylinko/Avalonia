@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.Loader;
+using Avalonia.Controls.Collectible;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Metadata;
@@ -14,6 +16,11 @@ namespace Avalonia.Controls
     {
         private static Dictionary<object, ITemplate<Control>?> s_previewWith = [];
         private static Dictionary<object, object?> s_templateDataContext = [];
+
+        static Design()
+        {
+            AvaloniaControlsCollectibleSweeper.EnsureRegistered();
+        }
 
         /// <summary>
         /// Gets a value indicating whether the application is running in design mode.
@@ -446,6 +453,41 @@ namespace Avalonia.Controls
             }
 
             return control;
+        }
+
+        internal static void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            PruneDictionary(s_previewWith, retiringContexts);
+            PruneDictionary(s_templateDataContext, retiringContexts);
+        }
+
+        private static void PruneDictionary<TValue>(
+            Dictionary<object, TValue> dictionary,
+            IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (dictionary.Count == 0)
+            {
+                return;
+            }
+
+            List<object>? keysToRemove = null;
+            foreach (var pair in dictionary)
+            {
+                if (CollectibleAssemblyCleanup.ReferencesObject(pair.Key, retiringContexts) ||
+                    CollectibleAssemblyCleanup.ReferencesObject(pair.Value, retiringContexts))
+                {
+                    keysToRemove ??= new List<object>();
+                    keysToRemove.Add(pair.Key);
+                }
+            }
+
+            if (keysToRemove is not null)
+            {
+                foreach (var key in keysToRemove)
+                {
+                    dictionary.Remove(key);
+                }
+            }
         }
     }
 }

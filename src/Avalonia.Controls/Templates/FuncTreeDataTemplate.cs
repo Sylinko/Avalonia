@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Data;
 using Avalonia.Reactive;
 
@@ -11,6 +13,7 @@ namespace Avalonia.Controls.Templates
     public class FuncTreeDataTemplate : FuncDataTemplate, ITreeDataTemplate
     {
         private readonly Func<object?, IEnumerable> _itemsSelector;
+        private readonly Type? _dataType;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FuncTreeDataTemplate"/> class.
@@ -29,6 +32,7 @@ namespace Avalonia.Controls.Templates
             Func<object?, IEnumerable> itemsSelector)
             : this(o => IsInstance(o, type), build, itemsSelector)
         {
+            _dataType = type;
         }
 
         /// <summary>
@@ -50,6 +54,13 @@ namespace Avalonia.Controls.Templates
             : base(match, build)
         {
             _itemsSelector = itemsSelector;
+        }
+
+        private protected override bool ReferencesContextsCore(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return base.ReferencesContextsCore(retiringContexts) ||
+                CollectibleAssemblyCleanup.References(_dataType, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(_itemsSelector, retiringContexts);
         }
 
         public IDisposable BindChildren(AvaloniaObject target, AvaloniaProperty targetProperty, object item)

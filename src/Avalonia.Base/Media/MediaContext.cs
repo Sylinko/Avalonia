@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Avalonia.Layout;
+using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Transport;
@@ -240,5 +242,50 @@ internal partial class MediaContext : ICompositorScheduler
 
         if (!_isRendering) 
             ScheduleRender(true);
+    }
+
+    internal void CollectTopLevelKeys(ICollection<object> destination)
+    {
+        foreach (var key in _topLevels.Keys)
+        {
+            destination.Add(key);
+        }
+    }
+
+    internal void FlushCollectibleCleanup()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return;
+        }
+
+        var infos = _topLevels.Values.ToArray();
+        var compositors = new HashSet<Compositor>(ReferenceEqualityComparer.Instance);
+
+        foreach (var info in infos)
+        {
+            info.LayoutManager.ExecuteLayoutPass();
+            compositors.Add(info.Compositor);
+        }
+
+        FireInvokeOnRenderCallbacks();
+
+        var hasRenderInterface = AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is not null;
+        foreach (var compositor in compositors)
+        {
+            if (!_requestedCommits.Contains(compositor) && !_pendingCompositionBatches.ContainsKey(compositor))
+            {
+                continue;
+            }
+
+            if (hasRenderInterface)
+            {
+                SyncCommit(compositor, waitFullRender: true, catchExceptions: true);
+            }
+            else if (!compositor.Loop.RunsInBackground)
+            {
+                compositor.Server.Render(catchExceptions: true);
+            }
+        }
     }
 }

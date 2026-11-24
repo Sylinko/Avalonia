@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using Avalonia.Reactive;
+using Avalonia.Controls.Collectible;
 using Avalonia.Controls.Metadata;
 using Avalonia.Controls.Platform;
 using Avalonia.Controls.Primitives;
@@ -337,6 +338,8 @@ namespace Avalonia.Controls
                     e.Handled = backRequestedEventArgs.Handled;
                 }
             });
+
+            AvaloniaControlsCollectibleSweeper.TrackTopLevel(this);
         }
         /// <summary>
         /// Fired when the window is opened.

@@ -2,7 +2,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Loader;
 using Avalonia.Collections;
+using Avalonia.Collectible;
 using Avalonia.Controls.Templates;
 using Avalonia.Styling;
 
@@ -400,6 +402,108 @@ namespace Avalonia.Controls
         {
             private readonly IDeferredContent _deferredContent = deferredContent ;
             public object? Build(IServiceProvider? serviceProvider) => _deferredContent.Build(serviceProvider);
+        }
+
+        internal void SweepResourceCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts, ISet<object> visited)
+        {
+            if (_lastDeferredItemKey is not null &&
+                CollectibleAssemblyCleanup.ReferencesObject(_lastDeferredItemKey, retiringContexts))
+            {
+                _lastDeferredItemKey = null;
+            }
+
+            if (_inner is not null)
+            {
+                List<object>? keysToRemove = null;
+                foreach (var pair in _inner)
+                {
+                    if (IsRetiringResourceEntry(pair.Key, pair.Value, retiringContexts))
+                    {
+                        keysToRemove ??= new List<object>();
+                        keysToRemove.Add(pair.Key);
+                    }
+                    else
+                    {
+                        AvaloniaBaseCollectibleSweeper.ScrubObject(pair.Value, retiringContexts, visited);
+                    }
+                }
+
+                if (keysToRemove is not null)
+                {
+                    foreach (var key in keysToRemove)
+                    {
+                        _inner.Remove(key);
+                    }
+                }
+            }
+
+            if (_mergedDictionaries is not null)
+            {
+                for (var i = _mergedDictionaries.Count - 1; i >= 0; i--)
+                {
+                    var provider = _mergedDictionaries[i];
+                    if (CollectibleAssemblyCleanup.ReferencesObject(provider, retiringContexts))
+                    {
+                        _mergedDictionaries.RemoveAt(i);
+                    }
+                    else
+                    {
+                        AvaloniaBaseCollectibleSweeper.ScrubObject(provider, retiringContexts, visited);
+                    }
+                }
+            }
+
+            if (_themeDictionary is not null)
+            {
+                List<ThemeVariant>? variantsToRemove = null;
+                foreach (var pair in _themeDictionary)
+                {
+                    if (CollectibleAssemblyCleanup.ReferencesObject(pair.Key, retiringContexts) ||
+                        CollectibleAssemblyCleanup.ReferencesObject(pair.Value, retiringContexts))
+                    {
+                        variantsToRemove ??= new List<ThemeVariant>();
+                        variantsToRemove.Add(pair.Key);
+                    }
+                    else
+                    {
+                        AvaloniaBaseCollectibleSweeper.ScrubObject(pair.Value, retiringContexts, visited);
+                    }
+                }
+
+                if (variantsToRemove is not null)
+                {
+                    foreach (var variant in variantsToRemove)
+                    {
+                        _themeDictionary.Remove(variant);
+                    }
+                }
+            }
+        }
+
+        private static bool IsRetiringResourceEntry(
+            object key,
+            object? value,
+            IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (CollectibleAssemblyCleanup.ReferencesObject(key, retiringContexts) ||
+                CollectibleAssemblyCleanup.ReferencesObject(value, retiringContexts))
+            {
+                return true;
+            }
+
+            if (key is Type keyType && CollectibleAssemblyCleanup.References(keyType, retiringContexts))
+            {
+                return true;
+            }
+
+            if (value is ControlTheme controlTheme &&
+                (CollectibleAssemblyCleanup.References(controlTheme.TargetType, retiringContexts) ||
+                    CollectibleAssemblyCleanup.ReferencesObject(controlTheme.BasedOn, retiringContexts)))
+            {
+                return true;
+            }
+
+            return false;
         }
     }
 }

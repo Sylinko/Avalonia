@@ -4,9 +4,11 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.Loader;
 using System.Text;
 using Avalonia.Animation;
 using Avalonia.Collections;
+using Avalonia.Collectible;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Diagnostics;
@@ -1050,6 +1052,53 @@ namespace Avalonia
                     result.Add(style);
                 else if (s is IReadOnlyList<IStyle> children)
                     RecurseStyles(children, result);
+            }
+        }
+
+        internal void SweepStyledElementCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts, ISet<object> visited)
+        {
+            if (_styles is not null)
+            {
+                AvaloniaBaseCollectibleSweeper.ScrubObject(_styles, retiringContexts, visited);
+            }
+
+            if (_resources is not null)
+            {
+                if (CollectibleAssemblyCleanup.ReferencesObject(_resources, retiringContexts))
+                {
+                    _resources = null;
+                }
+                else
+                {
+                    AvaloniaBaseCollectibleSweeper.ScrubObject(_resources, retiringContexts, visited);
+                }
+            }
+
+            if (_implicitTheme is not null &&
+                (CollectibleAssemblyCleanup.ReferencesObject(_implicitTheme, retiringContexts) ||
+                    CollectibleAssemblyCleanup.References(_implicitTheme.TargetType, retiringContexts)))
+            {
+                _implicitTheme = null;
+            }
+
+            if (_templatedParent is not null &&
+                CollectibleAssemblyCleanup.ReferencesObject(_templatedParent, retiringContexts))
+            {
+                _templatedParent = null;
+            }
+
+            if (_logicalChildren is not null && _logicalChildren.Count > 0)
+            {
+                var snapshot = new ILogical[_logicalChildren.Count];
+                for (var i = 0; i < snapshot.Length; i++)
+                {
+                    snapshot[i] = _logicalChildren[i];
+                }
+
+                foreach (var logicalChild in snapshot)
+                {
+                    AvaloniaBaseCollectibleSweeper.ScrubObject(logicalChild, retiringContexts, visited);
+                }
             }
         }
     }

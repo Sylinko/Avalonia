@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Layout;
 using Avalonia.VisualTree;
 
@@ -226,6 +227,38 @@ namespace Avalonia.Interactivity
             public RoutingStrategies Routes { get; }
 
             public bool HandledEventsToo { get; }
+        }
+
+        internal void SweepInteractiveCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (_eventHandlers is null || _eventHandlers.Count == 0)
+            {
+                return;
+            }
+
+            List<(RoutedEvent Event, Delegate Handler)>? handlersToRemove = null;
+            foreach (var pair in _eventHandlers)
+            {
+                var isEventRetiring = pair.Key.ReferencesContexts(retiringContexts);
+                foreach (var subscription in pair.Value)
+                {
+                    if (isEventRetiring ||
+                        CollectibleAssemblyCleanup.References(subscription.Handler, retiringContexts) ||
+                        CollectibleAssemblyCleanup.References(subscription.InvokeAdapter, retiringContexts))
+                    {
+                        handlersToRemove ??= new List<(RoutedEvent Event, Delegate Handler)>();
+                        handlersToRemove.Add((pair.Key, subscription.Handler));
+                    }
+                }
+            }
+
+            if (handlersToRemove is not null)
+            {
+                foreach (var (routedEvent, handler) in handlersToRemove)
+                {
+                    RemoveHandler(routedEvent, handler);
+                }
+            }
         }
     }
 }

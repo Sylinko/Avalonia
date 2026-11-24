@@ -1,5 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
 using System.Threading.Tasks;
+using Avalonia.Collectible;
 using static Avalonia.Reactive.AnonymousObserverNonGenericHelper;
 
 namespace Avalonia.Reactive;
@@ -8,7 +11,7 @@ namespace Avalonia.Reactive;
 /// Class to create an <see cref="IObserver{T}"/> instance from delegate-based implementations of the On* methods.
 /// </summary>
 /// <typeparam name="T">The type of the elements in the sequence.</typeparam>
-public class AnonymousObserver<T> : IObserver<T>
+public class AnonymousObserver<T> : IObserver<T>, ICollectibleContextReferencer
 {
     private readonly Action<T> _onNext;
     private readonly Action<Exception> _onError;
@@ -61,5 +64,12 @@ public class AnonymousObserver<T> : IObserver<T>
     public void OnNext(T value)
     {
         _onNext.Invoke(value);
+    }
+
+    bool ICollectibleContextReferencer.ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+    {
+        return CollectibleAssemblyCleanup.References(_onNext, retiringContexts) ||
+            CollectibleAssemblyCleanup.References(_onError, retiringContexts) ||
+            CollectibleAssemblyCleanup.References(_onCompleted, retiringContexts);
     }
 }

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Data;
 
 namespace Avalonia
@@ -57,6 +59,13 @@ namespace Avalonia
             var copy = new DirectPropertyMetadata<TValue>(UnsetValue, DefaultBindingMode, EnableDataValidation);
             copy.Freeze();
             return copy;
+        }
+
+        internal override bool ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return base.ReferencesContexts(retiringContexts) ||
+                CollectibleAssemblyCleanup.References(typeof(TValue), retiringContexts) ||
+                CollectibleAssemblyCleanup.ReferencesObject(UnsetValue, retiringContexts);
         }
     }
 }

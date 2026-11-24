@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 
 namespace Avalonia.Platform.Internal;
 
@@ -72,5 +73,16 @@ internal class AssemblyDescriptorResolver: IAssemblyDescriptorResolver
     public void InvalidateAssemblyCache()
     {
         _assemblyNameCache.Clear();
+    }
+
+    internal void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+    {
+        foreach (var pair in _assemblyNameCache)
+        {
+            if (CollectibleAssemblyCleanup.References(pair.Value.Assembly, retiringContexts))
+            {
+                _assemblyNameCache.TryRemove(pair.Key, out _);
+            }
+        }
     }
 }

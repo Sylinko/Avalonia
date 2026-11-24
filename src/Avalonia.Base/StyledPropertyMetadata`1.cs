@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 using Avalonia.Data;
 
 namespace Avalonia
@@ -75,6 +77,15 @@ namespace Avalonia
             var copy = new StyledPropertyMetadata<TValue>(DefaultValue, DefaultBindingMode, null, EnableDataValidation ?? false);
             copy.Freeze();
             return copy;
+        }
+
+        internal override bool ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return base.ReferencesContexts(retiringContexts) ||
+                CollectibleAssemblyCleanup.References(typeof(TValue), retiringContexts) ||
+                CollectibleAssemblyCleanup.References(CoerceValue, retiringContexts) ||
+                (_defaultValue.HasValue &&
+                    CollectibleAssemblyCleanup.ReferencesObject(_defaultValue.GetValueOrDefault(), retiringContexts));
         }
     }
 }

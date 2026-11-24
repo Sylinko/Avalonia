@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 using Avalonia.Input.Raw;
 using Avalonia.Reactive;
 
@@ -42,6 +45,13 @@ namespace Avalonia.Input
             _preProcess.OnCompleted();
             _process.OnCompleted();
             _postProcess.OnCompleted();
+        }
+
+        internal void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            _preProcess.SweepCollectibleObservers(retiringContexts);
+            _process.SweepCollectibleObservers(retiringContexts);
+            _postProcess.SweepCollectibleObservers(retiringContexts);
         }
     }
 }

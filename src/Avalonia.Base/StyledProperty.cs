@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 using Avalonia.Data;
 using Avalonia.PropertyStore;
 using Avalonia.Utilities;
@@ -290,6 +292,14 @@ namespace Avalonia
 
             converted = default;
             return false;
+        }
+
+        internal override bool ReferencesDelegates(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return CollectibleAssemblyCleanup.References(typeof(TValue), retiringContexts) ||
+                CollectibleAssemblyCleanup.References(ValidateValue, retiringContexts) ||
+                (_singleDefaultValue.HasValue &&
+                    CollectibleAssemblyCleanup.ReferencesObject(_singleDefaultValue.GetValueOrDefault(), retiringContexts));
         }
     }
 }

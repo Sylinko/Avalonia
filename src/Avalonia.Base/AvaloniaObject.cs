@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 using System.Text;
+using Avalonia.Collectible;
 using Avalonia.Data;
 using Avalonia.Data.Core;
 using Avalonia.Diagnostics;
@@ -890,6 +892,31 @@ namespace Avalonia
         private static void ThrowInvalidPriority(BindingPriority priority)
         {
             throw new ArgumentException($"Invalid priority ${priority}", nameof(priority));
+        }
+
+        internal void SweepAvaloniaObjectCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts, ISet<object> visited)
+        {
+            _propertyChanged = AvaloniaBaseCollectibleSweeper.RemoveRetiringDelegates(_propertyChanged, retiringContexts);
+            _inpcChanged = AvaloniaBaseCollectibleSweeper.RemoveRetiringDelegates(_inpcChanged, retiringContexts);
+
+            _values.SweepValueStoreCollectible(retiringContexts);
+
+            if (_inheritanceChildren is not null)
+            {
+                for (var i = _inheritanceChildren.Count - 1; i >= 0; i--)
+                {
+                    var child = _inheritanceChildren[i];
+                    if (CollectibleAssemblyCleanup.ReferencesObject(child, retiringContexts))
+                    {
+                        _inheritanceChildren.RemoveAt(i);
+                    }
+                }
+
+                foreach (var child in _inheritanceChildren.ToArray())
+                {
+                    AvaloniaBaseCollectibleSweeper.ScrubObject(child, retiringContexts, visited);
+                }
+            }
         }
     }
 }

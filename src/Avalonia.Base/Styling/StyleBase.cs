@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Animation;
+using Avalonia.Collectible;
 using Avalonia.Controls;
 using Avalonia.Metadata;
 using Avalonia.PropertyStore;
@@ -211,6 +213,89 @@ namespace Avalonia.Styling
             {
                 Owner = null;
                 _resources?.RemoveOwner(owner);
+            }
+        }
+
+        internal void SweepStyleBaseCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts, ISet<object> visited)
+        {
+            if (_resources is not null)
+            {
+                if (CollectibleAssemblyCleanup.ReferencesObject(_resources, retiringContexts))
+                {
+                    _resources = null;
+                }
+                else
+                {
+                    AvaloniaBaseCollectibleSweeper.ScrubObject(_resources, retiringContexts, visited);
+                }
+            }
+
+            var isInvalidated = false;
+
+            if (_setters is not null)
+            {
+                for (var i = _setters.Count - 1; i >= 0; i--)
+                {
+                    var setterBase = _setters[i];
+                    var shouldRemove = CollectibleAssemblyCleanup.ReferencesObject(setterBase, retiringContexts) ||
+                        (setterBase is Setter setter &&
+                            (AvaloniaBaseCollectibleSweeper.PropertyReferences(setter.Property, retiringContexts) ||
+                                CollectibleAssemblyCleanup.ReferencesObject(setter.Value, retiringContexts)));
+                    if (shouldRemove)
+                    {
+                        _setters.RemoveAt(i);
+                        isInvalidated = true;
+                    }
+                }
+            }
+
+            if (_animations is not null)
+            {
+                for (var i = _animations.Count - 1; i >= 0; i--)
+                {
+                    if (CollectibleAssemblyCleanup.ReferencesObject(_animations[i], retiringContexts))
+                    {
+                        _animations.RemoveAt(i);
+                        isInvalidated = true;
+                    }
+                }
+            }
+
+            if (HasChildren)
+            {
+                var children = Children;
+                for (var i = children.Count - 1; i >= 0; i--)
+                {
+                    var childStyle = children[i];
+                    if (Styles.IsRetiringStyle(childStyle, retiringContexts))
+                    {
+                        children.RemoveAt(i);
+                        isInvalidated = true;
+                    }
+                    else
+                    {
+                        AvaloniaBaseCollectibleSweeper.ScrubObject(childStyle, retiringContexts, visited);
+                    }
+                }
+            }
+
+            if (_sharedInstance is not null &&
+                (isInvalidated || CollectibleAssemblyCleanup.ReferencesObject(_sharedInstance, retiringContexts)))
+            {
+                _sharedInstance = null;
+            }
+
+            if (_sharedInstances is { } sharedInstances)
+            {
+                for (var i = 0; i < sharedInstances.Length; i++)
+                {
+                    var instance = sharedInstances[i];
+                    if (instance is not null &&
+                        (isInvalidated || CollectibleAssemblyCleanup.ReferencesObject(instance, retiringContexts)))
+                    {
+                        sharedInstances[i] = null;
+                    }
+                }
             }
         }
     }

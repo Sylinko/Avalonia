@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.Loader;
 
 namespace Avalonia.Data.Core.Plugins
 {
@@ -55,5 +56,17 @@ namespace Avalonia.Data.Core.Plugins
         /// of the '^' stream binding operator.
         /// </summary>
         public static IList<IStreamPlugin> StreamHandlers => s_streamHandlers;
+
+        internal static void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (retiringContexts.Count == 0)
+            {
+                return;
+            }
+
+            s_propertyAccessors.RemoveAll(plugin => CollectibleAssemblyCleanup.ReferencesObject(plugin, retiringContexts));
+            s_dataValidators.RemoveAll(plugin => CollectibleAssemblyCleanup.ReferencesObject(plugin, retiringContexts));
+            s_streamHandlers.RemoveAll(plugin => CollectibleAssemblyCleanup.ReferencesObject(plugin, retiringContexts));
+        }
     }
 }

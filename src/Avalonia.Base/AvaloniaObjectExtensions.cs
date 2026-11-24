@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 using Avalonia.Data;
 using Avalonia.Data.Core;
 using Avalonia.Reactive;
@@ -350,7 +353,8 @@ namespace Avalonia
             }
         }
 
-        private class ClassHandlerObserver<TTarget, TValue> : IObserver<AvaloniaPropertyChangedEventArgs<TValue>>
+        private class ClassHandlerObserver<TTarget, TValue>
+            : IObserver<AvaloniaPropertyChangedEventArgs<TValue>>, ICollectibleContextReferencer
         {
             private readonly Action<TTarget, AvaloniaPropertyChangedEventArgs<TValue>> _action;
 
@@ -374,9 +378,17 @@ namespace Avalonia
                     _action(target, value);
                 }
             }
+
+            bool ICollectibleContextReferencer.ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+            {
+                return CollectibleAssemblyCleanup.References(typeof(TTarget), retiringContexts) ||
+                    CollectibleAssemblyCleanup.References(typeof(TValue), retiringContexts) ||
+                    CollectibleAssemblyCleanup.References(_action, retiringContexts);
+            }
         }
 
-        private class ClassHandlerObserver<TTarget> : IObserver<AvaloniaPropertyChangedEventArgs>
+        private class ClassHandlerObserver<TTarget>
+            : IObserver<AvaloniaPropertyChangedEventArgs>, ICollectibleContextReferencer
         {
             private readonly Action<TTarget, AvaloniaPropertyChangedEventArgs> _action;
 
@@ -399,6 +411,12 @@ namespace Avalonia
                 {
                     _action(target, value);
                 }
+            }
+
+            bool ICollectibleContextReferencer.ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+            {
+                return CollectibleAssemblyCleanup.References(typeof(TTarget), retiringContexts) ||
+                    CollectibleAssemblyCleanup.References(_action, retiringContexts);
             }
         }
     }

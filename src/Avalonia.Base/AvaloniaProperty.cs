@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 using Avalonia.Data;
 using Avalonia.Data.Core;
 using Avalonia.PropertyStore;
@@ -709,10 +711,125 @@ namespace Avalonia
             return _defaultMetadata;
         }
 
+        internal AvaloniaPropertyMetadata GetMetadataSkippingContexts(
+            Type type,
+            IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (_singleMetadata == _defaultMetadata)
+            {
+                return _defaultMetadata;
+            }
+
+            if (_singleMetadata is not null)
+            {
+                return _singleHostType is not null &&
+                    _singleHostType.IsAssignableFrom(type) &&
+                    !CollectibleAssemblyCleanup.References(_singleHostType, retiringContexts) &&
+                    !_singleMetadata.ReferencesContexts(retiringContexts)
+                        ? _singleMetadata
+                        : _defaultMetadata;
+            }
+
+            var currentType = type;
+
+            while (currentType is not null)
+            {
+                if (_metadata.TryGetValue(currentType, out var result) &&
+                    !CollectibleAssemblyCleanup.References(currentType, retiringContexts) &&
+                    !result.ReferencesContexts(retiringContexts))
+                {
+                    return result;
+                }
+
+                currentType = currentType.BaseType;
+            }
+
+            return _defaultMetadata;
+        }
+
         bool IPropertyInfo.CanGet => true;
         bool IPropertyInfo.CanSet => !IsReadOnly;
         object? IPropertyInfo.Get(object target) => ((AvaloniaObject)target).GetValue(this);
         void IPropertyInfo.Set(object target, object? value) => ((AvaloniaObject)target).SetValue(this, value);
+
+        internal virtual bool ReferencesDelegates(IReadOnlySet<AssemblyLoadContext> retiringContexts) => false;
+
+        internal bool ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (CollectibleAssemblyCleanup.References(GetType(), retiringContexts) ||
+                CollectibleAssemblyCleanup.References(OwnerType, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(PropertyType, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(Notifying, retiringContexts))
+            {
+                return true;
+            }
+
+            if (_defaultMetadata.ReferencesContexts(retiringContexts))
+            {
+                return true;
+            }
+
+            return ReferencesDelegates(retiringContexts);
+        }
+
+        internal void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            var isSingleRemoved = false;
+            if (CollectibleAssemblyCleanup.References(_singleHostType, retiringContexts) ||
+                (_singleMetadata is not null && _singleMetadata.ReferencesContexts(retiringContexts)))
+            {
+                _singleHostType = null;
+                _singleMetadata = null;
+                isSingleRemoved = true;
+            }
+
+            List<Type>? metadataToRemove = null;
+            foreach (var pair in _metadata)
+            {
+                if (CollectibleAssemblyCleanup.References(pair.Key, retiringContexts) ||
+                    pair.Value.ReferencesContexts(retiringContexts))
+                {
+                    metadataToRemove ??= new List<Type>();
+                    metadataToRemove.Add(pair.Key);
+                }
+            }
+
+            if (metadataToRemove is not null)
+            {
+                foreach (var key in metadataToRemove)
+                {
+                    _metadata.Remove(key);
+                }
+            }
+
+            if (isSingleRemoved || metadataToRemove is not null)
+            {
+                _metadataCache.Clear();
+            }
+            else if (_metadataCache.Count > 0)
+            {
+                List<Type>? cacheToRemove = null;
+                foreach (var pair in _metadataCache)
+                {
+                    if (CollectibleAssemblyCleanup.References(pair.Key, retiringContexts) ||
+                        pair.Value.ReferencesContexts(retiringContexts))
+                    {
+                        cacheToRemove ??= new List<Type>();
+                        cacheToRemove.Add(pair.Key);
+                    }
+                }
+
+                if (cacheToRemove is not null)
+                {
+                    foreach (var key in cacheToRemove)
+                    {
+                        _metadataCache.Remove(key);
+                    }
+                }
+            }
+
+            (GetChanged() as ICollectibleObserverTarget)?.SweepCollectibleObservers(retiringContexts);
+        }
     }
 
     /// <summary>

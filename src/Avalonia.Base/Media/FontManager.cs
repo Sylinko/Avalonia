@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.Loader;
 using Avalonia.Logging;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting.Unicode;
@@ -513,6 +514,52 @@ namespace Avalonia.Media
 
             _fontCollections.Clear();
             (PlatformImpl as IDisposable)?.Dispose();
+        }
+
+        internal void SweepCollectible(
+            IReadOnlySet<AssemblyLoadContext> retiringContexts,
+            IReadOnlySet<string> retiringAssemblyNames)
+        {
+            foreach (var pair in _fontCollections)
+            {
+                var shouldRemove = CollectibleAssemblyCleanup.ReferencesObject(pair.Value, retiringContexts) ||
+                    MatchesRetiringUri(pair.Key, retiringAssemblyNames) ||
+                    (pair.Value is EmbeddedFontCollection embedded && embedded.ReferencesAssemblyNames(retiringAssemblyNames));
+
+                if (shouldRemove && _fontCollections.TryRemove(pair.Key, out var removedCollection))
+                {
+                    removedCollection.Dispose();
+                }
+            }
+        }
+
+        internal static bool MatchesRetiringUri(Uri? uri, IReadOnlySet<string> retiringAssemblyNames)
+        {
+            if (uri is null || retiringAssemblyNames.Count == 0 || !uri.IsAbsoluteUri)
+            {
+                return false;
+            }
+
+            if (string.Equals(uri.Scheme, "avares", StringComparison.OrdinalIgnoreCase))
+            {
+                return retiringAssemblyNames.Contains(uri.Host);
+            }
+
+            if (string.Equals(uri.Scheme, "resm", StringComparison.OrdinalIgnoreCase))
+            {
+                var query = uri.Query;
+                const string prefix = "assembly=";
+                var index = query.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+                if (index >= 0)
+                {
+                    var start = index + prefix.Length;
+                    var end = query.IndexOf('&', start);
+                    var assemblyName = end >= 0 ? query.Substring(start, end - start) : query.Substring(start);
+                    return retiringAssemblyNames.Contains(assemblyName);
+                }
+            }
+
+            return false;
         }
     }
 }

@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 using Avalonia.Data;
 using Avalonia.Data.Core;
 using Avalonia.Diagnostics;
@@ -1295,6 +1297,83 @@ namespace Avalonia.PropertyStore
             public readonly EffectiveValue? NewValue;
 
             public OldNewValue WithNewValue(EffectiveValue newValue) => new(OldValue, newValue);
+        }
+
+        internal void SweepValueStoreCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (_localValueBindings is { Count: > 0 })
+            {
+                List<int>? bindingIdsToRemove = null;
+                foreach (var pair in _localValueBindings)
+                {
+                    if (CollectibleAssemblyCleanup.ReferencesObject(pair.Value, retiringContexts) ||
+                        (pair.Value is IValueEntry entry &&
+                            AvaloniaBaseCollectibleSweeper.PropertyReferences(entry.Property, retiringContexts)))
+                    {
+                        bindingIdsToRemove ??= new List<int>();
+                        bindingIdsToRemove.Add(pair.Key);
+                    }
+                }
+
+                if (bindingIdsToRemove is not null)
+                {
+                    foreach (var propertyId in bindingIdsToRemove)
+                    {
+                        if (_localValueBindings.TryGetValue(propertyId, out var binding))
+                        {
+                            _localValueBindings.Remove(propertyId);
+                            binding.Dispose();
+                        }
+                    }
+                }
+            }
+
+            var hasRemovedFrames = false;
+            for (var i = _frames.Count - 1; i >= 0; i--)
+            {
+                var frame = _frames[i];
+                if (CollectibleAssemblyCleanup.ReferencesObject(frame, retiringContexts))
+                {
+                    frame.Dispose();
+                    _frames.RemoveAt(i);
+                    hasRemovedFrames = true;
+                    continue;
+                }
+
+                frame.SweepFrameCollectible(this, retiringContexts, out var isEmpty);
+                if (isEmpty)
+                {
+                    _frames.RemoveAt(i);
+                    hasRemovedFrames = true;
+                }
+            }
+
+            if (hasRemovedFrames)
+            {
+                ++_frameGeneration;
+                ReevaluateEffectiveValues();
+            }
+
+            for (var i = _effectiveValues.Count - 1; i >= 0; i--)
+            {
+                var effectiveValue = _effectiveValues.GetValue(i);
+                var property = effectiveValue.Property;
+                var isRetiringProperty = AvaloniaBaseCollectibleSweeper.PropertyReferences(property, retiringContexts);
+                var isRetiringValue = effectiveValue.SweepMetadataAndValueReferences(Owner, retiringContexts);
+
+                if (!isRetiringProperty && !isRetiringValue)
+                {
+                    continue;
+                }
+
+                ClearValue(property);
+
+                if (_effectiveValues.TryGetValue(property, out var remainingValue) &&
+                    (isRetiringProperty || remainingValue.SweepMetadataAndValueReferences(Owner, retiringContexts)))
+                {
+                    RemoveEffectiveValue(property);
+                }
+            }
         }
     }
 }

@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Runtime.Loader;
 using System.Threading;
+using Avalonia.Collectible;
 
 namespace Avalonia.Reactive
 {
@@ -14,7 +16,7 @@ namespace Avalonia.Reactive
     /// usage. This class provides a more lightweight base for some internal observable types
     /// in the Avalonia framework.
     /// </remarks>
-    internal abstract class LightweightObservableBase<T> : IObservable<T>
+    internal abstract class LightweightObservableBase<T> : IObservable<T>, ICollectibleObserverTarget
     {
         private Exception? _error;
         private List<IObserver<T>>? _observers = new List<IObserver<T>>();
@@ -232,6 +234,41 @@ namespace Avalonia.Reactive
 
         protected virtual void Subscribed(IObserver<T> observer, bool first)
         {
+        }
+
+        public void SweepCollectibleObservers(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (retiringContexts.Count == 0 || Volatile.Read(ref _observers) is null)
+            {
+                return;
+            }
+
+            lock (this)
+            {
+                var observers = _observers;
+                if (observers is null || observers.Count == 0)
+                {
+                    return;
+                }
+
+                var isAnyRemoved = false;
+                for (var index = observers.Count - 1; index >= 0; index--)
+                {
+                    if (!AvaloniaBaseCollectibleSweeper.ObserverReferences(observers[index], retiringContexts))
+                    {
+                        continue;
+                    }
+
+                    observers.RemoveAt(index);
+                    isAnyRemoved = true;
+                }
+
+                if (isAnyRemoved && observers.Count == 0)
+                {
+                    observers.TrimExcess();
+                    Deinitialize();
+                }
+            }
         }
     }
 }

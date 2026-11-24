@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Animation.Animators;
 using Avalonia.Media;
 
@@ -81,5 +82,33 @@ partial class Animation
         }
 
         return null;
+    }
+
+    internal static void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+    {
+        Animators.RemoveAll(entry =>
+            CollectibleAssemblyCleanup.References(entry.Condition, retiringContexts) ||
+            CollectibleAssemblyCleanup.References(entry.Animator, retiringContexts) ||
+            CollectibleAssemblyCleanup.References(entry.Factory, retiringContexts));
+
+        List<IAnimationSetter>? settersToRemove = null;
+        foreach (var pair in s_animators)
+        {
+            if (CollectibleAssemblyCleanup.ReferencesObject(pair.Key, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(pair.Value.Type, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(pair.Value.Factory, retiringContexts))
+            {
+                settersToRemove ??= new List<IAnimationSetter>();
+                settersToRemove.Add(pair.Key);
+            }
+        }
+
+        if (settersToRemove is not null)
+        {
+            foreach (var setter in settersToRemove)
+            {
+                s_animators.Remove(setter);
+            }
+        }
     }
 }

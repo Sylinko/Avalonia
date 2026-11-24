@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Data;
 
 namespace Avalonia
@@ -146,5 +148,13 @@ namespace Avalonia
 
         object? IDirectPropertyAccessor.GetUnsetValue(AvaloniaObject owner)
             => GetMetadata(owner).UnsetValue;
+
+        internal override bool ReferencesDelegates(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return CollectibleAssemblyCleanup.References(typeof(TOwner), retiringContexts) ||
+                CollectibleAssemblyCleanup.References(typeof(TValue), retiringContexts) ||
+                CollectibleAssemblyCleanup.References(Getter, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(Setter, retiringContexts);
+        }
     }
 }

@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.Loader;
 using Avalonia.Diagnostics;
 using Avalonia.PropertyStore;
 
@@ -60,6 +62,21 @@ namespace Avalonia.Styling
 
             activity?.AddTag(Diagnostic.Tags.SelectorResult, SelectorMatchResult.NeverThisType);
             return SelectorMatchResult.NeverThisType;
+        }
+
+        internal void SweepControlThemeCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (CollectibleAssemblyCleanup.References(TargetType, retiringContexts))
+            {
+                TargetType = null;
+            }
+
+            if (BasedOn is not null &&
+                (CollectibleAssemblyCleanup.ReferencesObject(BasedOn, retiringContexts) ||
+                    CollectibleAssemblyCleanup.References(BasedOn.TargetType, retiringContexts)))
+            {
+                BasedOn = null;
+            }
         }
     }
 }

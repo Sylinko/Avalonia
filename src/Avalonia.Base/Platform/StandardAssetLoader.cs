@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using Avalonia.Metadata;
 using Avalonia.Platform.Internal;
 using Avalonia.Utilities;
@@ -265,5 +266,19 @@ public class StandardAssetLoader : IAssetLoader
         catch (Exception) { }
 
         return false;
+    }
+
+    internal void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+    {
+        if (_defaultResmAssembly is not null &&
+            CollectibleAssemblyCleanup.References(_defaultResmAssembly.Assembly, retiringContexts))
+        {
+            _defaultResmAssembly = null;
+        }
+
+        if (_assemblyDescriptorResolver is AssemblyDescriptorResolver resolver)
+        {
+            resolver.SweepCollectible(retiringContexts);
+        }
     }
 }

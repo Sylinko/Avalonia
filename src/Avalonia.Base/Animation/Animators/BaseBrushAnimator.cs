@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.Loader;
 
 using Avalonia.Logging;
 using Avalonia.Media;
@@ -168,6 +169,14 @@ namespace Avalonia.Animation.Animators
 
             animator = null;
             return false;
+        }
+
+        internal static void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            _brushAnimators.RemoveAll(entry =>
+                CollectibleAssemblyCleanup.References(entry.Match, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(entry.AnimatorType, retiringContexts) ||
+                CollectibleAssemblyCleanup.References(entry.AnimatorFactory, retiringContexts));
         }
     }
 }

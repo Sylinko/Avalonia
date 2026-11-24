@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Animation;
+using Avalonia.Collectible;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Collectible;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Input;
@@ -70,6 +73,7 @@ namespace Avalonia
         public Application()
         {
             Name = "Avalonia Application";
+            AvaloniaControlsCollectibleSweeper.EnsureRegistered();
         }
 
         /// <summary>
@@ -341,6 +345,45 @@ namespace Avalonia
         {
             PlatformSettings?.ColorValuesChanged += OnColorValuesChanged;
             ThemeVariant.UpdateActualThemeVariant(this);
+        }
+
+        internal void SweepCollectible(
+            IReadOnlySet<AssemblyLoadContext> retiringContexts,
+            ISet<object> visited,
+            ISet<object> baseVisited)
+        {
+            if (!CheckAccess())
+            {
+                return;
+            }
+
+            AvaloniaControlsCollectibleSweeper.PruneDataTemplates(_dataTemplates, retiringContexts);
+
+            if (_resources is not null)
+            {
+                if (CollectibleAssemblyCleanup.ReferencesObject(_resources, retiringContexts))
+                {
+                    _resources.RemoveOwner(this);
+                    _resources = new ResourceDictionary(this);
+                }
+                else
+                {
+                    AvaloniaBaseCollectibleSweeper.ScrubObject(_resources, retiringContexts, baseVisited);
+                }
+            }
+
+            if (_styles is not null)
+            {
+                AvaloniaBaseCollectibleSweeper.ScrubObject(_styles, retiringContexts, baseVisited);
+            }
+
+            _stylesAdded = AvaloniaControlsCollectibleSweeper.RemoveRetiringDelegates(_stylesAdded, retiringContexts);
+            _stylesRemoved = AvaloniaControlsCollectibleSweeper.RemoveRetiringDelegates(_stylesRemoved, retiringContexts);
+            ResourcesChanged = AvaloniaControlsCollectibleSweeper.RemoveRetiringDelegates(ResourcesChanged, retiringContexts);
+            ActualThemeVariantChanged = AvaloniaControlsCollectibleSweeper.RemoveRetiringDelegates(ActualThemeVariantChanged, retiringContexts);
+
+            AvaloniaControlsCollectibleSweeper.ScrubLifetime(_applicationLifetime, retiringContexts, visited, baseVisited);
+            AvaloniaBaseCollectibleSweeper.ScrubObject(this, retiringContexts, baseVisited);
         }
     }
 }

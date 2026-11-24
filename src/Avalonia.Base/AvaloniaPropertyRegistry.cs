@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 
 namespace Avalonia
 {
@@ -507,6 +509,103 @@ namespace Avalonia
                 _inheritedCache.Clear();
             }
            
+        }
+
+        internal void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (retiringContexts.Count == 0)
+            {
+                return;
+            }
+
+            var trackedProperties = new HashSet<AvaloniaProperty>(ReferenceEqualityComparer.Instance);
+
+            lock (_unregisteringLocker)
+            {
+                SweepPropertyMap(_registered, retiringContexts, trackedProperties);
+                SweepPropertyMap(_attached, retiringContexts, trackedProperties);
+                SweepPropertyMap(_direct, retiringContexts, trackedProperties);
+
+                List<int>? propertyIdsToRemove = null;
+                foreach (var pair in _properties)
+                {
+                    trackedProperties.Add(pair.Value);
+                    if (AvaloniaBaseCollectibleSweeper.PropertyReferences(pair.Value, retiringContexts))
+                    {
+                        propertyIdsToRemove ??= new List<int>();
+                        propertyIdsToRemove.Add(pair.Key);
+                    }
+                }
+
+                if (propertyIdsToRemove is not null)
+                {
+                    foreach (var id in propertyIdsToRemove)
+                    {
+                        _properties.Remove(id);
+                    }
+                }
+
+                foreach (var property in trackedProperties)
+                {
+                    property.SweepCollectible(retiringContexts);
+                }
+
+                _registeredCache.Clear();
+                _attachedCache.Clear();
+                _directCache.Clear();
+                _inheritedCache.Clear();
+            }
+        }
+
+        private static void SweepPropertyMap(
+            Dictionary<Type, Dictionary<int, AvaloniaProperty>> map,
+            IReadOnlySet<AssemblyLoadContext> retiringContexts,
+            HashSet<AvaloniaProperty> trackedProperties)
+        {
+            List<Type>? outerTypesToRemove = null;
+            foreach (var outerPair in map)
+            {
+                var isOuterRetiring = CollectibleAssemblyCleanup.References(outerPair.Key, retiringContexts);
+                if (isOuterRetiring)
+                {
+                    outerTypesToRemove ??= new List<Type>();
+                    outerTypesToRemove.Add(outerPair.Key);
+                }
+
+                List<int>? innerIdsToRemove = null;
+                foreach (var innerPair in outerPair.Value)
+                {
+                    trackedProperties.Add(innerPair.Value);
+                    if (!isOuterRetiring &&
+                        AvaloniaBaseCollectibleSweeper.PropertyReferences(innerPair.Value, retiringContexts))
+                    {
+                        innerIdsToRemove ??= new List<int>();
+                        innerIdsToRemove.Add(innerPair.Key);
+                    }
+                }
+
+                if (innerIdsToRemove is not null)
+                {
+                    foreach (var id in innerIdsToRemove)
+                    {
+                        outerPair.Value.Remove(id);
+                    }
+
+                    if (outerPair.Value.Count == 0)
+                    {
+                        outerTypesToRemove ??= new List<Type>();
+                        outerTypesToRemove.Add(outerPair.Key);
+                    }
+                }
+            }
+
+            if (outerTypesToRemove is not null)
+            {
+                foreach (var type in outerTypesToRemove)
+                {
+                    map.Remove(type);
+                }
+            }
         }
     }
 }

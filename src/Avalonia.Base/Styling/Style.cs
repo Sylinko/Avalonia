@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
 using Avalonia.Diagnostics;
 using Avalonia.PropertyStore;
 
@@ -96,6 +98,16 @@ namespace Avalonia.Styling
                 throw new InvalidOperationException(
                     "Invalid selector: Template selector must be followed by control selector.");
             return selector;
+        }
+
+        internal void SweepStyleCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (_selector is not null &&
+                (CollectibleAssemblyCleanup.ReferencesObject(_selector, retiringContexts) ||
+                    CollectibleAssemblyCleanup.References(_selector.TargetType, retiringContexts)))
+            {
+                _selector = null;
+            }
         }
     }
 }

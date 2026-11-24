@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.Loader;
 
 namespace Avalonia.Interactivity
 {
@@ -82,6 +83,44 @@ namespace Avalonia.Interactivity
         public IReadOnlyList<RoutedEvent> GetRegistered<TOwner>()
         {
             return GetRegistered(typeof(TOwner));
+        }
+
+        internal void SweepCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (retiringContexts.Count == 0)
+            {
+                return;
+            }
+
+            List<Type>? outerTypesToRemove = null;
+            foreach (var pair in _registeredRoutedEvents)
+            {
+                var isOwnerRetiring = CollectibleAssemblyCleanup.References(pair.Key, retiringContexts);
+                for (var index = pair.Value.Count - 1; index >= 0; index--)
+                {
+                    var routedEvent = pair.Value[index];
+                    routedEvent.SweepCollectibleObservers(retiringContexts);
+
+                    if (!isOwnerRetiring && routedEvent.ReferencesContexts(retiringContexts))
+                    {
+                        pair.Value.RemoveAt(index);
+                    }
+                }
+
+                if (isOwnerRetiring || pair.Value.Count == 0)
+                {
+                    outerTypesToRemove ??= new List<Type>();
+                    outerTypesToRemove.Add(pair.Key);
+                }
+            }
+
+            if (outerTypesToRemove is not null)
+            {
+                foreach (var type in outerTypesToRemove)
+                {
+                    _registeredRoutedEvents.Remove(type);
+                }
+            }
         }
     }
 }

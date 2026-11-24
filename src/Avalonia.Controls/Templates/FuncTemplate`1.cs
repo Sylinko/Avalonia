@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.Loader;
+using Avalonia.Collectible;
 using Avalonia.Styling;
 
 namespace Avalonia.Controls.Templates
@@ -7,7 +10,7 @@ namespace Avalonia.Controls.Templates
     /// Creates a control from a <see cref="Func{TControl}"/>.
     /// </summary>
     /// <typeparam name="TControl">The type of control.</typeparam>
-    public class FuncTemplate<TControl> : ITemplate<TControl> where TControl : Control?
+    public class FuncTemplate<TControl> : ITemplate<TControl>, ICollectibleContextReferencer where TControl : Control?
     {
         private readonly Func<TControl> _func;
 
@@ -32,5 +35,12 @@ namespace Avalonia.Controls.Templates
         }
 
         object? ITemplate.Build() => Build();
+
+        bool ICollectibleContextReferencer.ReferencesContexts(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            return CollectibleAssemblyCleanup.References(GetType(), retiringContexts) ||
+                CollectibleAssemblyCleanup.References(typeof(TControl), retiringContexts) ||
+                CollectibleAssemblyCleanup.References(_func, retiringContexts);
+        }
     }
 }

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Runtime.Loader;
 using Avalonia.Automation.Peers;
+using Avalonia.Controls.Collectible;
 using Avalonia.Controls.Platform;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
@@ -99,6 +101,11 @@ namespace Avalonia.Controls
         private DataTemplates? _dataTemplates;
         private Control? _focusAdorner;
         private AutomationPeer? _automationPeer;
+
+        static Control()
+        {
+            AvaloniaControlsCollectibleSweeper.EnsureRegistered();
+        }
 
         /// <summary>
         /// Gets or sets the control's focus adorner.
@@ -555,6 +562,46 @@ namespace Avalonia.Controls
             _loadedQueue.Clear();
             _loadedProcessingQueue.Clear();
             _isLoadedProcessing = false;
+        }
+
+        internal static void SweepLoadedQueues(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            if (_loadedQueue.Count > 0)
+            {
+                _loadedQueue.RemoveWhere(control => CollectibleAssemblyCleanup.ReferencesObject(control, retiringContexts));
+            }
+
+            if (_loadedProcessingQueue.Count > 0)
+            {
+                var retained = new List<Control>(_loadedProcessingQueue.Count);
+                while (_loadedProcessingQueue.TryDequeue(out var control))
+                {
+                    if (!CollectibleAssemblyCleanup.ReferencesObject(control, retiringContexts))
+                    {
+                        retained.Add(control);
+                    }
+                }
+
+                foreach (var control in retained)
+                {
+                    _loadedProcessingQueue.Enqueue(control);
+                }
+            }
+        }
+
+        internal void SweepControlCollectible(IReadOnlySet<AssemblyLoadContext> retiringContexts)
+        {
+            AvaloniaControlsCollectibleSweeper.PruneDataTemplates(_dataTemplates, retiringContexts);
+
+            if (_focusAdorner is not null && CollectibleAssemblyCleanup.ReferencesObject(_focusAdorner, retiringContexts))
+            {
+                _focusAdorner = null;
+            }
+
+            if (_automationPeer is not null && CollectibleAssemblyCleanup.ReferencesObject(_automationPeer, retiringContexts))
+            {
+                _automationPeer = null;
+            }
         }
 
         private enum LoadState : byte

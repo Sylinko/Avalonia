@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.Loader;
 using Avalonia.Data;
 
 namespace Avalonia.PropertyStore
@@ -212,6 +214,10 @@ namespace Avalonia.PropertyStore
         /// Gets the current effective value as a boxed value.
         /// </summary>
         protected abstract object? GetBoxedValue();
+
+        internal abstract bool SweepMetadataAndValueReferences(
+            AvaloniaObject owner,
+            IReadOnlySet<AssemblyLoadContext> retiringContexts);
 
         protected void UpdateValueEntry(IValueEntry? entry, BindingPriority priority)
         {
