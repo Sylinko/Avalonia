@@ -787,13 +787,26 @@ namespace Avalonia.Controls.Presenters
                     UpdateChild();
                 }
             }
-            else if (Child != null)
+            else
             {
-                VisualChildren.Remove(Child);
-                GetEffectiveLogicalChildren().Remove(Child);
-                ((ISetInheritanceParent)Child).SetParent(Child.Parent);
-                Child = null;
-                _recyclingDataTemplate = null;
+                if (Child != null)
+                {
+                    VisualChildren.Remove(Child);
+                    GetEffectiveLogicalChildren().Remove(Child);
+                    ((ISetInheritanceParent)Child).SetParent(Child.Parent);
+                    Child = null;
+                    _recyclingDataTemplate = null;
+                }
+
+                // Clear presenter-owned DataContext when Content is cleared or replaced while detached,
+                // without wiping DataContext pre-assigned before initial Content setup (e.g. ItemsControl.PrepareItemContainer).
+                if (IsSet(DataContextProperty) &&
+                    (e.Property.Name == nameof(Content)
+                        ? e.NewValue is null || (e.OldValue is not null && Equals(DataContext, e.OldValue))
+                        : Content is null))
+                {
+                    ClearValue(DataContextProperty);
+                }
             }
 
             UpdatePseudoClasses();

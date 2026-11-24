@@ -1190,12 +1190,15 @@ namespace Avalonia.Controls
 
         private void RecycleFocusedElement()
         {
-            if (_focusedElement != null)
-            {
-                RecycleElementOnItemRemoved(_focusedElement);
-            }
+            // Clear _focusedElement before recycling so synchronous TabOnceActiveElement clearing cannot double-pool it.
+            var focusedElement = _focusedElement;
             _focusedElement = null;
             _focusedIndex = -1;
+
+            if (focusedElement != null)
+            {
+                RecycleElementOnItemRemoved(focusedElement);
+            }
         }
 
         private void RecycleScrollToElement()

@@ -217,6 +217,14 @@ namespace Avalonia.Controls
             };
         }
 
+        /// <inheritdoc />
+        internal override void DetachFromCompositor()
+        {
+            // Clear the cached visual before detaching so offscreen borders do not retain removed child subtrees.
+            _borderVisual = null;
+            base.DetachFromCompositor();
+        }
+
         // TODO13: make explicit
         public CornerRadius ClipToBoundsRadius => CornerRadius;
     }

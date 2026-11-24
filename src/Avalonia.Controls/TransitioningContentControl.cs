@@ -150,7 +150,30 @@ public class TransitioningContentControl : ContentControl
 
     private void UpdateContent(bool withTransition)
     {
-        if (VisualRoot is null || _presenter2 is null || Presenter is null)
+        if (VisualRoot is null)
+        {
+            // Clear stale presenters when content changes while detached so old trees are not pinned offscreen.
+            _currentTransition?.Cancel();
+            _currentTransition = null;
+            _shouldAnimate = false;
+
+            if (Presenter is not null)
+            {
+                Presenter.Content = null;
+                Presenter.IsVisible = false;
+            }
+
+            if (_presenter2 is not null)
+            {
+                _presenter2.Content = null;
+                _presenter2.IsVisible = false;
+            }
+
+            _lastPresenter = null;
+            return;
+        }
+
+        if (_presenter2 is null || Presenter is null)
         {
             return;
         }

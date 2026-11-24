@@ -1081,6 +1081,12 @@ namespace Avalonia.Controls.Primitives
         /// <param name="e">The event args.</param>
         private void OnSelectionModelLostSelection(object? sender, EventArgs e)
         {
+            _selectedItemsSnapshot?.Clear();
+            if (!_isSelectionChangeActive)
+            {
+                UpdateSelectedValueFromItem();
+            }
+
             if (_selectedItemsBeforeReset?.Length > 0)
             {
                 RaiseSelectionChanged(_selectedItemsBeforeReset, Array.Empty<object?>());
@@ -1495,7 +1501,25 @@ namespace Avalonia.Controls.Primitives
             {
                 model.PropertyChanged -= OnSelectionModelPropertyChanged;
                 model.SelectionChanged -= OnSelectionModelSelectionChanged;
+                model.LostSelection -= OnSelectionModelLostSelection;
+
+                // Only reset SelectedValue when replacing an initialized model so pre-init SelectedValue stays intact.
+                if (!_isSelectionChangeActive && GetValue(SelectedValueProperty) is not null)
+                {
+                    try
+                    {
+                        _isSelectionChangeActive = true;
+                        SetCurrentValue(SelectedValueProperty, null);
+                    }
+                    finally
+                    {
+                        _isSelectionChangeActive = false;
+                    }
+                }
             }
+
+            _selectedItemsSnapshot?.Clear();
+            _selectedItemsBeforeReset = null;
         }
 
         private void BeginUpdating()

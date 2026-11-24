@@ -16,6 +16,7 @@ using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Metadata;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 
 namespace Avalonia.Controls
 {
@@ -726,8 +727,18 @@ namespace Avalonia.Controls
 
         internal void ClearItemContainer(Control container)
         {
+            var shouldClearTabOnceActiveElement = KeyboardNavigation.GetTabOnceActiveElement(this) is { } activeElement &&
+                (ReferenceEquals(activeElement, container) ||
+                 activeElement is Visual activeVisual && container.IsVisualAncestorOf(activeVisual));
+
             ClearContainerForItemOverride(container);
             ContainerClearing?.Invoke(this, new(container));
+            container.ClearValue(DataContextProperty);
+
+            if (shouldClearTabOnceActiveElement)
+            {
+                KeyboardNavigation.SetTabOnceActiveElement(this, null);
+            }
         }
 
         private void AddControlItemsToLogicalChildren(IEnumerable? items)
