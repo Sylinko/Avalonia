@@ -194,11 +194,16 @@ public:
 // Not released at exit: .NET is already shut down by then
 static ComStaticPtr<IAvnGCHandleDeallocatorCallback> _deallocator;
 static ComStaticPtr<IAvnDispatcher> _dispatcher;
-class AvaloniaNative : public ComSingleObject<IAvaloniaNativeFactory, &IID_IAvaloniaNativeFactory>
+class AvaloniaNative : public ComObject, public virtual MicroComImpl<IAvaloniaNativeFactory>, public virtual MicroComImpl<IAvnPanelFactory>
 {
     
 public:
     FORWARD_IUNKNOWN()
+
+    BEGIN_INTERFACE_MAP()
+        INTERFACE_MAP_ENTRY(IAvaloniaNativeFactory, IID_IAvaloniaNativeFactory)
+        INTERFACE_MAP_ENTRY(IAvnPanelFactory, IID_IAvnPanelFactory)
+    END_INTERFACE_MAP()
     
     virtual ~AvaloniaNative() override
     {
@@ -240,7 +245,23 @@ public:
         ppv = CreateAvnWindow(cb);
         return S_OK;
     };
-    
+
+    virtual HRESULT CreatePanel(const ComPtr<IAvnWindowEvents>& cb, bool isNonActivating, ComPtr<IAvnWindow>& ppv) override
+    {
+        if(cb == nullptr)
+            return E_POINTER;
+        ppv = CreateAvnPanel(cb, isNonActivating);
+        return S_OK;
+    }
+
+    virtual HRESULT CreateNonActivatingPopup(const ComPtr<IAvnWindowEvents>& cb, ComPtr<IAvnPopup>& ppv) override
+    {
+        if(cb == nullptr)
+            return E_POINTER;
+        ppv = CreateAvnNonActivatingPopup(cb);
+        return S_OK;
+    }
+
     virtual HRESULT CreatePopup(const ComPtr<IAvnWindowEvents>& cb, ComPtr<IAvnPopup>& ppv) override
     {
         if(cb == nullptr)

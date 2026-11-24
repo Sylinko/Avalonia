@@ -40,7 +40,9 @@
                       Private="false" />
 
     <ProjectReference Include="..\..\packages\Avalonia\Avalonia.csproj" />
-    <ProjectReference Include="..\Avalonia.Dialogs\Avalonia.Dialogs.csproj" />
+    <!-- Avalonia.Dialogs is distributed inside the main Avalonia package. Standalone
+         native packing must not depend on its unpublished intermediate package. -->
+    <ProjectReference Include="..\Avalonia.Dialogs\Avalonia.Dialogs.csproj" PrivateAssets="all" />
   </ItemGroup>
 
   <Import Project="..\..\build\MicroCOM.props" />

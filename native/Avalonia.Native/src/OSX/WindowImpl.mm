@@ -10,7 +10,7 @@
 #include "WindowProtocol.h"
 #include "WindowImpl.h"
 
-WindowImpl::WindowImpl(const ComPtr<IAvnWindowEvents>& events) : TopLevelImpl(events), WindowBaseImpl(events, false) {
+WindowImpl::WindowImpl(const ComPtr<IAvnWindowEvents>& events, bool usePanel, bool isNonActivating) : TopLevelImpl(events), WindowBaseImpl(events, usePanel, isNonActivating) {
     _isEnabled = true;
     _isClientAreaExtended = false;
     _fullScreenActive = false;
@@ -36,7 +36,9 @@ void WindowImpl::OnInitialiseNSWindow(){
     
     [Window disableCursorRects];
     [Window setTabbingMode:NSWindowTabbingModeDisallowed];
-    [Window setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
+    [Window setCollectionBehavior:[Window isKindOfClass:[NSPanel class]]
+        ? NSWindowCollectionBehaviorFullScreenAuxiliary
+        : NSWindowCollectionBehaviorFullScreenPrimary];
 
     [Window setTitle:_lastTitle];
     
@@ -586,5 +588,10 @@ void WindowImpl::UpdateAppearance() {
 
 extern ComPtr<IAvnWindow> CreateAvnWindow(const ComPtr<IAvnWindowEvents>& events)
 {
-    return comnew<WindowImpl>(events);
+    return comnew<WindowImpl>(events, false, false);
+}
+
+extern ComPtr<IAvnWindow> CreateAvnPanel(const ComPtr<IAvnWindowEvents>& events, bool isNonActivating)
+{
+    return comnew<WindowImpl>(events, true, isNonActivating);
 }

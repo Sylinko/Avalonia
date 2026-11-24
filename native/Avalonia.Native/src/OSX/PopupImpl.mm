@@ -22,9 +22,15 @@ private:
     END_INTERFACE_MAP()
     virtual ~PopupImpl(){}
     ComPtr<IAvnWindowEvents> WindowEvents;
-    PopupImpl(const ComPtr<IAvnWindowEvents>& events) : TopLevelImpl(events), WindowBaseImpl(events)
+    PopupImpl(const ComPtr<IAvnWindowEvents>& events, bool isNonActivating) : TopLevelImpl(events), WindowBaseImpl(events, isNonActivating, isNonActivating)
     {
         WindowEvents = events;
+        if (isNonActivating)
+        {
+            // Avalonia draws popup shadows within its surface. NSPanel otherwise
+            // adds a native rectangular shadow that borderless NSWindow does not.
+            [Window setHasShadow:false];
+        }
         UpdateWindowLevel();
     }
 protected:
@@ -35,7 +41,7 @@ protected:
 
     virtual NSWindowStyleMask CalculateStyleMask() override
     {
-        return NSWindowStyleMaskBorderless;
+        return NSWindowStyleMaskBorderless | ([Window styleMask] & NSWindowStyleMaskNonactivatingPanel);
     }
 
 public:
@@ -56,6 +62,11 @@ public:
 
     virtual bool ShouldTakeFocusOnShow() override
     {
+        // The parent panel already owns keyboard/IME input. Showing its popup must
+        // neither replace that key route nor activate the application.
+        if (IsNonActivating())
+            return false;
+
         auto parent = Parent.tryGet();
         // Don't steal the focus from another windows if our parent is inactive
         if (parent != nullptr && parent->Window != nullptr && ![parent->Window isKeyWindow])
@@ -68,5 +79,10 @@ public:
 
 extern ComPtr<IAvnPopup> CreateAvnPopup(const ComPtr<IAvnWindowEvents>& events)
 {
-    return comnew<PopupImpl>(events);
+    return comnew<PopupImpl>(events, false);
+}
+
+extern ComPtr<IAvnPopup> CreateAvnNonActivatingPopup(const ComPtr<IAvnWindowEvents>& events)
+{
+    return comnew<PopupImpl>(events, true);
 }
