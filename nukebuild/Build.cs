@@ -324,6 +324,85 @@ partial class Build : NukeBuild
                 Parameters.NugetRoot / $"Avalonia.{Parameters.Version}.snupkg");
         });
 
+    Target PackSylinkoAvalonia => _ => _
+        .Executes(() =>
+        {
+            var baseVersion = XDocument.Load(RootDirectory / "build" / "SharedVersion.props")
+                .Descendants()
+                .First(x => x.Name.LocalName == "Version")
+                .Value;
+            var packageVersion = string.IsNullOrWhiteSpace(ForceNugetVersion) ? baseVersion : ForceNugetVersion;
+            var assemblyVersion = $"{baseVersion}.0";
+            var outputDir = RootDirectory / "artifacts" / "sylinko-avalonia";
+
+            Parameters.NugetIntermediateRoot.CreateOrCleanDirectory();
+            outputDir.CreateOrCleanDirectory();
+
+            DotNetBuild(c => c
+                .SetProjectFile(RootDirectory / "src" / "tools" / "Avalonia.Designer.HostApp" / "Avalonia.Designer.HostApp.csproj")
+                .SetConfiguration("Release")
+                .SetVerbosity(DotNetVerbosity.minimal)
+                .AddProperty("PackageVersion", packageVersion)
+                .AddProperty("AssemblyVersion", assemblyVersion)
+                .AddProperty("RepositoryUrl", "https://github.com/Sylinko/Avalonia"));
+
+            string[] projects =
+            [
+                "src/Avalonia.Build.Tasks/Avalonia.Build.Tasks.csproj",
+                "src/Avalonia.Base/Avalonia.Base.csproj",
+                "src/Avalonia.Controls/Avalonia.Controls.csproj",
+                "src/Avalonia.DesignerSupport/Avalonia.DesignerSupport.csproj",
+                "src/Avalonia.OpenGL/Avalonia.OpenGL.csproj",
+                "src/Avalonia.Metal/Avalonia.Metal.csproj",
+                "src/Avalonia.Vulkan/Avalonia.Vulkan.csproj",
+                "src/Avalonia.Dialogs/Avalonia.Dialogs.csproj",
+                "src/Markup/Avalonia.Markup/Avalonia.Markup.csproj",
+                "src/Markup/Avalonia.Markup.Xaml/Avalonia.Markup.Xaml.csproj",
+                "src/Avalonia.MicroCom/Avalonia.MicroCom.csproj",
+                "src/Avalonia.Remote.Protocol/Avalonia.Remote.Protocol.csproj",
+                "src/tools/Avalonia.Generators/Avalonia.Generators.csproj",
+                "src/tools/Avalonia.Analyzers.CSharp/Avalonia.Analyzers.CSharp.csproj",
+                "src/tools/Avalonia.Analyzers.VisualBasic/Avalonia.Analyzers.VisualBasic.csproj",
+                "src/tools/Avalonia.Analyzers.CodeFixes.CSharp/Avalonia.Analyzers.CodeFixes.CSharp.csproj",
+                "packages/Avalonia/Avalonia.csproj",
+            ];
+
+            foreach (var relativeProject in projects)
+            {
+                DotNetPack(c => c
+                    .SetProject(RootDirectory / relativeProject)
+                    .SetConfiguration("Release")
+                    .SetVerbosity(DotNetVerbosity.minimal)
+                    .AddProperty("PackageVersion", packageVersion)
+                    .AddProperty("AssemblyVersion", assemblyVersion)
+                    .AddProperty("RepositoryUrl", "https://github.com/Sylinko/Avalonia"));
+            }
+
+            BuildTasksPatcher.PatchBuildTasksInPackage(
+                Parameters.NugetIntermediateRoot / $"Avalonia.Build.Tasks.{packageVersion}.nupkg",
+                IlRepackTool);
+
+            var config = Numerge.MergeConfiguration.LoadFile(RootDirectory / "nukebuild" / "numerge.json");
+            config.Packages.RemoveAll(p => !string.Equals(p.Id, "Avalonia", StringComparison.Ordinal));
+            if (!Numerge.NugetPackageMerger.Merge(
+                Parameters.NugetIntermediateRoot,
+                outputDir,
+                config,
+                new NumergeNukeLogger()))
+            {
+                throw new Exception("Sylinko Avalonia package merge failed");
+            }
+
+            RefAssemblyGenerator.GenerateRefAsmsInPackage(
+                outputDir / $"Avalonia.{packageVersion}.nupkg",
+                outputDir / $"Avalonia.{packageVersion}.snupkg");
+
+            foreach (var extraPackage in outputDir.GlobFiles("Avalonia.Remote.Protocol.*"))
+            {
+                extraPackage.DeleteFile();
+            }
+        });
+
     Target EmbedSbom => _ => _
         .DependsOn(CreateNugetPackages)
         .Executes(() =>

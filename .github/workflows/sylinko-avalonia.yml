@@ -1,0 +1,65 @@
+name: Build Sylinko Avalonia
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the reviewed Avalonia package and open its feed PR
+        type: boolean
+        default: false
+      package_version:
+        description: NuGet package version to pack and optionally publish (12.2.0 or emergency 12.2.0.1)
+        type: string
+        default: '12.2.0'
+
+concurrency:
+  group: sylinko-avalonia-${{ inputs.package_version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.repository == 'Sylinko/Avalonia'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Check publication identity
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+        shell: pwsh
+        run: |
+          if ($env:PACKAGE_VERSION -notmatch '^12\.2\.0(\.\d+)?$') {
+            throw "Unexpected package_version '$($env:PACKAGE_VERSION)' for 12.2.0 baseline."
+          }
+          & gh release view "nuget/Avalonia/$($env:PACKAGE_VERSION)" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release nuget/Avalonia/$($env:PACKAGE_VERSION) already exists. Do not replace published package bytes."
+          }
+      - name: Build and verify the compatibility package
+        env:
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+        shell: pwsh
+        run: ./scripts/sylinko/build-avalonia-package.ps1 -PackageVersion "$env:PACKAGE_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Avalonia-${{ inputs.package_version }}
+          path: artifacts/sylinko-avalonia/*
+      - name: Publish reviewed package and propose feed version
+        if: inputs.publish
+        uses: Sylinko/nuget-feed@v1
+        with:
+          token: ${{ secrets.SYLINKO_NUGET_FEED_TOKEN }}
+          release-tag: nuget/Avalonia/${{ inputs.package_version }}
+          artifacts-directory: artifacts/sylinko-avalonia
