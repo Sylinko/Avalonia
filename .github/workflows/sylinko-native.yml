@@ -50,7 +50,7 @@ jobs:
         env:
           DEPLOYMENT_TARGET: ${{ inputs.deployment_target }}
         shell: bash
-        run: scripts/sylinko/build-native-package.sh --deployment-target "$DEPLOYMENT_TARGET"
+        run: bash scripts/sylinko/build-native-package.sh --deployment-target "$DEPLOYMENT_TARGET"
       - uses: actions/upload-artifact@v4
         with:
           name: Avalonia.Native-12.2.0
