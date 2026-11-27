@@ -11,6 +11,10 @@ on:
         description: NuGet package version to pack and optionally publish (12.2.0 or emergency 12.2.0.1)
         type: string
         default: '12.2.0'
+      reuse_existing_release:
+        description: Skip building and open or update the feed PR from an existing GitHub Release
+        type: boolean
+        default: false
 
 concurrency:
   group: sylinko-avalonia-${{ inputs.package_version }}
@@ -27,40 +31,52 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        if: ${{ !inputs.reuse_existing_release }}
         with:
           fetch-depth: 0
           submodules: recursive
       - uses: actions/setup-dotnet@v5
+        if: ${{ !inputs.reuse_existing_release }}
         with:
           global-json-file: global.json
       - name: Check publication identity
-        if: inputs.publish
+        if: ${{ inputs.publish || inputs.reuse_existing_release }}
         env:
           GH_TOKEN: ${{ github.token }}
           PACKAGE_VERSION: ${{ inputs.package_version }}
+          SHOULD_PUBLISH: ${{ inputs.publish }}
+          REUSE_EXISTING_RELEASE: ${{ inputs.reuse_existing_release }}
         shell: pwsh
         run: |
           if ($env:PACKAGE_VERSION -notmatch '^12\.2\.0(\.\d+)?$') {
             throw "Unexpected package_version '$($env:PACKAGE_VERSION)' for 12.2.0 baseline."
           }
-          & gh release view "nuget/Avalonia/$($env:PACKAGE_VERSION)" *> $null
-          if ($LASTEXITCODE -eq 0) {
-            throw "Release nuget/Avalonia/$($env:PACKAGE_VERSION) already exists. Do not replace published package bytes."
+          if ($env:REUSE_EXISTING_RELEASE -eq 'true') {
+            if ($env:SHOULD_PUBLISH -ne 'true') {
+              throw 'reuse_existing_release requires publish=true.'
+            }
+            & gh release view "nuget/Avalonia/$($env:PACKAGE_VERSION)" --repo "$env:GITHUB_REPOSITORY" *> $null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Expected existing release nuget/Avalonia/$($env:PACKAGE_VERSION) to reuse."
+            }
           }
           exit 0
       - name: Build and verify the compatibility package
+        if: ${{ !inputs.reuse_existing_release }}
         env:
           PACKAGE_VERSION: ${{ inputs.package_version }}
         shell: pwsh
         run: ./scripts/sylinko/build-avalonia-package.ps1 -PackageVersion "$env:PACKAGE_VERSION"
       - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.reuse_existing_release }}
         with:
           name: Avalonia-${{ inputs.package_version }}
           path: artifacts/sylinko-avalonia/*
       - name: Publish reviewed package and propose feed version
-        if: inputs.publish
+        if: ${{ inputs.publish }}
         uses: Sylinko/nuget-feed@v1
         with:
           token: ${{ secrets.SYLINKO_NUGET_FEED_TOKEN }}
           release-tag: nuget/Avalonia/${{ inputs.package_version }}
           artifacts-directory: artifacts/sylinko-avalonia
+          reuse-existing-release: ${{ inputs.reuse_existing_release }}
