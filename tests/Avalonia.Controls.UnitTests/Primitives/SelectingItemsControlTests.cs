@@ -1992,6 +1992,61 @@ namespace Avalonia.Controls.UnitTests.Primitives
         }
 
         [Fact]
+        public void AutoScrollToSelectedItem_Insert_Before_Selected_Item_Keeps_Virtualizing_Containers_In_Sync()
+        {
+            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface);
+
+            var items = new ObservableCollection<string>
+            {
+                "Item B",
+                "Item C"
+            };
+
+            var target = new ListBox
+            {
+                Width = 100,
+                Height = 100,
+                ItemsSource = items,
+                ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { CacheLength = 0 }),
+                AutoScrollToSelectedItem = true,
+                Template = new FuncControlTemplate<SelectingItemsControl>((control, scope) =>
+                    new ScrollViewer
+                    {
+                        Name = "PART_ScrollViewer",
+                        Template = new FuncControlTemplate<ScrollViewer>((scrollViewer, svScope) =>
+                            new ScrollContentPresenter
+                            {
+                                Name = "PART_ContentPresenter",
+                                [~ContentPresenter.ContentProperty] = scrollViewer[~ContentControl.ContentProperty],
+                            }.RegisterInNameScope(svScope)),
+                        Content = new ItemsPresenter
+                        {
+                            Name = "PART_ItemsPresenter",
+                            [~ItemsPresenter.ItemsPanelProperty] = control[~ItemsControl.ItemsPanelProperty],
+                        }.RegisterInNameScope(scope),
+                    }.RegisterInNameScope(scope)),
+            };
+
+            var root = new TestRoot(target);
+            root.LayoutManager.ExecuteInitialLayoutPass();
+
+            target.SelectedIndex = 1;
+            root.LayoutManager.ExecuteLayoutPass();
+
+            items.Insert(0, "Item A");
+            root.LayoutManager.ExecuteLayoutPass();
+
+            Assert.Equal(2, target.SelectedIndex);
+            Assert.Equal("Item C", target.SelectedItem);
+            for (var i = 0; i < items.Count; ++i)
+            {
+                var container = Assert.IsType<ListBoxItem>(target.ContainerFromIndex(i));
+                Assert.Equal(items[i], container.Content);
+                Assert.Equal(i == 2, container.IsSelected);
+            }
+        }
+
+        [Fact]
         public void Can_Set_Both_SelectedItem_And_SelectedItems_During_Initialization()
         {
             using var _ = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface);

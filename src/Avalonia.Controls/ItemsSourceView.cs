@@ -39,6 +39,7 @@ namespace Avalonia.Controls
         private NotifyCollectionChangedEventHandler? _preCollectionChanged;
         private NotifyCollectionChangedEventHandler? _postCollectionChanged;
         private bool _listening;
+        private int _collectionChangedDepth;
 
         /// <summary>
         /// Initializes a new instance of the ItemsSourceView class for the specified data source.
@@ -58,6 +59,8 @@ namespace Avalonia.Controls
 
         internal IList? TryGetInitializedSource()
             => _source == UninitializedSource ? null : _source;
+
+        internal bool IsRaisingCollectionChanged => _collectionChangedDepth > 0;
 
         /// <summary>
         /// Retrieves the item at the specified index.
@@ -232,7 +235,16 @@ namespace Avalonia.Controls
 
         void ICollectionChangedListener.PreChanged(INotifyCollectionChanged sender, NotifyCollectionChangedEventArgs e)
         {
-            _preCollectionChanged?.Invoke(this, e);
+            ++_collectionChangedDepth;
+            try
+            {
+                _preCollectionChanged?.Invoke(this, e);
+            }
+            catch
+            {
+                DecrementCollectionChangedDepth();
+                throw;
+            }
         }
 
         void ICollectionChangedListener.Changed(INotifyCollectionChanged sender, NotifyCollectionChangedEventArgs e)
@@ -242,7 +254,24 @@ namespace Avalonia.Controls
 
         void ICollectionChangedListener.PostChanged(INotifyCollectionChanged sender, NotifyCollectionChangedEventArgs e)
         {
-            _postCollectionChanged?.Invoke(this, e);
+            try
+            {
+                _postCollectionChanged?.Invoke(this, e);
+            }
+            finally
+            {
+                DecrementCollectionChangedDepth();
+            }
+        }
+
+        internal void CancelCollectionChanged() => DecrementCollectionChangedDepth();
+
+        private void DecrementCollectionChangedDepth()
+        {
+            if (_collectionChangedDepth > 0)
+            {
+                --_collectionChangedDepth;
+            }
         }
 
         int IList.Add(object? value) => ThrowReadOnly();
@@ -259,9 +288,17 @@ namespace Avalonia.Controls
 
         private protected void RaiseCollectionChanged(NotifyCollectionChangedEventArgs e)
         {
-            _preCollectionChanged?.Invoke(this, e);
-            _collectionChanged?.Invoke(this, e);
-            _postCollectionChanged?.Invoke(this, e);
+            ++_collectionChangedDepth;
+            try
+            {
+                _preCollectionChanged?.Invoke(this, e);
+                _collectionChanged?.Invoke(this, e);
+                _postCollectionChanged?.Invoke(this, e);
+            }
+            finally
+            {
+                DecrementCollectionChangedDepth();
+            }
         }
 
         [MemberNotNull(nameof(_source))]

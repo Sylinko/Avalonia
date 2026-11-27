@@ -397,11 +397,55 @@ partial class Build : NukeBuild
                 outputDir / $"Avalonia.{packageVersion}.nupkg",
                 outputDir / $"Avalonia.{packageVersion}.snupkg");
 
+            if (!string.Equals(packageVersion, baseVersion, StringComparison.Ordinal))
+            {
+                PinRemoteProtocolDependencyVersion(outputDir / $"Avalonia.{packageVersion}.nupkg", packageVersion, baseVersion);
+                PinRemoteProtocolDependencyVersion(outputDir / $"Avalonia.{packageVersion}.snupkg", packageVersion, baseVersion);
+            }
+
             foreach (var extraPackage in outputDir.GlobFiles("Avalonia.Remote.Protocol.*"))
             {
                 extraPackage.DeleteFile();
             }
         });
+
+    static void PinRemoteProtocolDependencyVersion(AbsolutePath packagePath, string fromVersion, string toVersion)
+    {
+        using var archive = ZipFile.Open(packagePath, ZipArchiveMode.Update);
+        var entry = archive.GetEntry("Avalonia.nuspec")
+            ?? throw new InvalidOperationException($"Avalonia.nuspec missing from package '{packagePath}'.");
+
+        XDocument document;
+        using (var readStream = entry.Open())
+        {
+            document = XDocument.Load(readStream);
+        }
+
+        var ns = document.Root?.Name.Namespace ?? XNamespace.None;
+        var updated = false;
+        foreach (var dependency in document.Descendants(ns + "dependency"))
+        {
+            var idAttribute = dependency.Attribute("id");
+            var versionAttribute = dependency.Attribute("version");
+            if (idAttribute is not null &&
+                versionAttribute is not null &&
+                string.Equals(idAttribute.Value, "Avalonia.Remote.Protocol", StringComparison.Ordinal) &&
+                string.Equals(versionAttribute.Value, fromVersion, StringComparison.Ordinal))
+            {
+                versionAttribute.Value = toVersion;
+                updated = true;
+            }
+        }
+
+        if (!updated)
+        {
+            return;
+        }
+
+        using var writeStream = entry.Open();
+        writeStream.SetLength(0);
+        document.Save(writeStream);
+    }
 
     Target EmbedSbom => _ => _
         .DependsOn(CreateNugetPackages)

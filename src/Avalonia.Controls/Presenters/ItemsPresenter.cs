@@ -140,8 +140,10 @@ namespace Avalonia.Controls.Presenters
                 return;
             }
 
-            // Try to execute synchronously when no layout pass is running.
-            if (!layoutManager.IsInLayoutPass && TryScrollIntoViewNow(index))
+            // Try to execute synchronously when no layout pass or collection-change notification is running.
+            if (!layoutManager.IsInLayoutPass &&
+                ItemsControl?.ItemsView.IsRaisingCollectionChanged != true &&
+                TryScrollIntoViewNow(index))
             {
                 _pendingScrollIntoViewIndex = -1;
                 return;
@@ -181,7 +183,9 @@ namespace Avalonia.Controls.Presenters
             if (index < 0)
                 return true;
 
-            if (Panel is not { IsMeasureValid: true, IsArrangeValid: true } || !IsEffectivelyVisible)
+            if (ItemsControl?.ItemsView.IsRaisingCollectionChanged == true ||
+                Panel is not { IsMeasureValid: true, IsArrangeValid: true } ||
+                !IsEffectivelyVisible)
                 return false;
 
             _pendingScrollIntoViewIndex = -1;

@@ -107,27 +107,43 @@ namespace Avalonia.Controls.Utils
                     NotifyCollectionChangedEventArgs args,
                     WeakReference<ICollectionChangedListener>[] listeners)
                 {
-                    foreach (var l in listeners)
+                    var preNotifiedCount = 0;
+                    var postNotifiedCount = 0;
+
+                    try
                     {
-                        if (l.TryGetTarget(out var target))
+                        for (; preNotifiedCount < listeners.Length; preNotifiedCount++)
                         {
-                            target.PreChanged(incc, args);
+                            if (listeners[preNotifiedCount].TryGetTarget(out var target))
+                            {
+                                target.PreChanged(incc, args);
+                            }
+                        }
+
+                        foreach (var l in listeners)
+                        {
+                            if (l.TryGetTarget(out var target))
+                            {
+                                target.Changed(incc, args);
+                            }
+                        }
+
+                        while (postNotifiedCount < listeners.Length)
+                        {
+                            if (listeners[postNotifiedCount++].TryGetTarget(out var target))
+                            {
+                                target.PostChanged(incc, args);
+                            }
                         }
                     }
-
-                    foreach (var l in listeners)
+                    finally
                     {
-                        if (l.TryGetTarget(out var target))
+                        for (var i = postNotifiedCount; i < preNotifiedCount; i++)
                         {
-                            target.Changed(incc, args);
-                        }
-                    }
-
-                    foreach (var l in listeners)
-                    {
-                        if (l.TryGetTarget(out var target))
-                        {
-                            target.PostChanged(incc, args);
+                            if (listeners[i].TryGetTarget(out var target) && target is ItemsSourceView itemsSourceView)
+                            {
+                                itemsSourceView.CancelCollectionChanged();
+                            }
                         }
                     }
                 }

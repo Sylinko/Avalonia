@@ -78,14 +78,20 @@ try {
         }
 
         $depIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+        $depVersions = @{}
         foreach ($dep in $metadata.Descendants($ns + 'dependency')) {
-            [void]$depIds.Add($dep.Attribute('id').Value)
+            $depId = $dep.Attribute('id').Value
+            [void]$depIds.Add($depId)
+            $depVersions[$depId] = $dep.Attribute('version').Value
         }
         $expectedDeps = @('Avalonia.BuildServices', 'Avalonia.Remote.Protocol', 'MicroCom.Runtime')
         foreach ($expectedDep in $expectedDeps) {
             if (-not $depIds.Contains($expectedDep)) {
                 throw "Expected dependency missing from Avalonia.nuspec: $expectedDep"
             }
+        }
+        if ($depVersions['Avalonia.Remote.Protocol'] -ne '12.2.0') {
+            throw "Unexpected Avalonia.Remote.Protocol dependency version '$($depVersions['Avalonia.Remote.Protocol'])' (expected 12.2.0)"
         }
         if ($depIds.Count -ne $expectedDeps.Count) {
             throw "Unexpected extra dependencies in Avalonia.nuspec: $($depIds -join ', ')"
